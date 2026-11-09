@@ -1,0 +1,5 @@
+tools/node_modules/
+scratch/
+*.part
+*.xml
+__pycache__/

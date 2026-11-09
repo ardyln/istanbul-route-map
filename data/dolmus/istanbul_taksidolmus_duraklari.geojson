@@ -1,0 +1,490 @@
+{
+	"type" : "FeatureCollection",
+	"name" : "istanbul_taksidolmus_duraklari",
+	"features" : [
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.9747473552, 41.0174567168 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Eminönü (Sirkeci Üsküdar İskelesi Önü) (2 araçlık cep)",
+				"ACIKLAMA" : "SURİÇİ GRUBU/D46 EMİNÖNÜ-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0209321708, 40.9906947782 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Depolama",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D22 ÜSKÜDAR-BAĞLARBAŞI-KADIKÖY"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.9300984579, 41.0033748277 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "K.M.Paşa (1 ara.)",
+				"ACIKLAMA" : "SURİÇİ GRUBU/D44 KOCAMUSTAFAPAŞA-AKSARAY-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0074166061, 41.0421640487 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Beşiktaş Caddesi (2 Araç)",
+				"ACIKLAMA" : "BEŞİKTAŞ  GRUBU/BŞK3 BEŞİKTAŞ-ORTAKÖY-KURUÇEŞME-BEBEK-BEBEK YOKUŞU-ETİLER METRO"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0046937362, 41.0418117907 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Beşiktaş (Beşiktaş Caddesi) (2 Araç)",
+				"ACIKLAMA" : "BEŞİKTAŞ  GRUBU/BŞK1 BEŞİKTAŞ-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0954746011, 40.9529773476 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Bağdat Cad. Bostancı (3 araç)",
+				"ACIKLAMA" : "KADIKÖY GRUBU/D34 KADIKÖY-BOSTANCI"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0121993593, 41.0249669056 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Depolama",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D21 ÜSKÜDAR-DOĞANCILAR-KADIKÖY"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0374913098, 40.9924606801 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Söğütlüçeşme Metrobüs Durağı (2 araç)",
+				"ACIKLAMA" : "KADIKÖY GRUBU/D38 SÖĞÜTLÜÇEŞME METROBÜS-BOSTANCI"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.2273477926, 41.0315926226 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Çekmeköy (Taşdelen)",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D28 KADIKÖY-ÇEKMEKÖY"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.1767847709, 41.0326036074 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Mimarsinan Mh. (1 araç)",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D58 MİMAR SİNAN MAH.-ÇEKMEKÖY METRO"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0122025228, 41.0249657414 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Üsküdar Şemsipaşa (depolama)",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D30 ÜSKÜDAR-EMNİYET MAHALLESİ"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0153784978, 41.0254789326 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Üsküdar Bağlarbaşı",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D21 ÜSKÜDAR-DOĞANCILAR-KADIKÖY"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0954768084, 40.9529787804 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Bağdat Cad.-Bostancı (2 araç)",
+				"ACIKLAMA" : "KADIKÖY GRUBU/D38 SÖĞÜTLÜÇEŞME METROBÜS-BOSTANCI"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0247278778, 40.9921895804 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Ara durak",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D21 ÜSKÜDAR-DOĞANCILAR-KADIKÖY"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.9877239016, 41.0374381719 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Mete Cad. (3 araç)",
+				"ACIKLAMA" : "KADIKÖY GRUBU/D31 KADIKÖY-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.9876162291, 41.037072717 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Mete Cad. (2 araç)",
+				"ACIKLAMA" : "KADIKÖY GRUBU/D61 ATAŞEHİR-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.9107947502, 41.0157895993 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Cevizlibağ (2 araç)",
+				"ACIKLAMA" : "SURİÇİ GRUBU/D41 CEVİZLİBAĞ-TOPKAPI-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0181129777, 41.0243729943 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Karagazi Sok (1 araç)",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D25 ÜSKÜDAR-BAĞLARBAŞI KÜLTÜR MERKEZİ"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0205891685, 40.9905012695 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Rıhtım Cad. (4 araç)",
+				"ACIKLAMA" : "KADIKÖY GRUBU/D34 KADIKÖY-BOSTANCI"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0205956669, 40.9904870301 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Kadıköy İskele ( 8 araç)",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D21 ÜSKÜDAR-DOĞANCILAR-KADIKÖY"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.1949273307, 41.0244933046 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Çekmeköy (Ara Durak)",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D28 KADIKÖY-ÇEKMEKÖY"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.9807286199, 41.0364231915 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Tarlabaşı Blv. ( 1 araç)",
+				"ACIKLAMA" : "SURİÇİ GRUBU/D44 KOCAMUSTAFAPAŞA-AKSARAY-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0246254039, 40.9921448769 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Kadıköy- İskele (5 araç)",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D22 ÜSKÜDAR-BAĞLARBAŞI-KADIKÖY"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.9806082403, 41.0364557185 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Tarlabaşı Blv ( 1 araç)",
+				"ACIKLAMA" : "SURİÇİ GRUBU/D41 CEVİZLİBAĞ-TOPKAPI-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.9878405063, 41.049378853 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Harbiye (Dersane Sokak) (4 Araç)",
+				"ACIKLAMA" : "BEŞİKTAŞ  GRUBU/BŞK2 BEŞİKTAŞ-HARBİYE"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0611010059, 41.0317906941 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "3. Zeytinlik Sk. (3 araç)",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D30 ÜSKÜDAR-EMNİYET MAHALLESİ"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0153784978, 41.0254789326 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Üsküdar-Balaban Cad. (2 araç)",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D22 ÜSKÜDAR-BAĞLARBAŞI-KADIKÖY"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.9810906974, 41.0366830983 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Taksim meydan dönüş ( 1 araç)",
+				"ACIKLAMA" : "SURİÇİ GRUBU/D15 YENİBOSNA-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.8749223482, 40.9816710866 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Bakırköy - General Şükrü Kanatlı Caddesi Üzeri Cep",
+				"ACIKLAMA" : "SURİÇİ GRUBU/D11 BAKIRKÖY-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0122040956, 41.0249657549 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Depolama",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D22 ÜSKÜDAR-BAĞLARBAŞI-KADIKÖY"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0339419838, 41.0237438321 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Bağlarbaşı Kongre ve Kültür Merkezi",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D25 ÜSKÜDAR-BAĞLARBAŞI KÜLTÜR MERKEZİ"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0205954554, 40.9905013229 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Rıhtım Cad.ı (2 Araç)",
+				"ACIKLAMA" : "KADIKÖY GRUBU/D31 KADIKÖY-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.1359187601, 40.990607734 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Ataşehir Blv. (1 araç)",
+				"ACIKLAMA" : "KADIKÖY GRUBU/D61 ATAŞEHİR-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0153785688, 41.025474169 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Üsküdar Balaban Cad. (1 araç)",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D30 ÜSKÜDAR-EMNİYET MAHALLESİ"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0076581508, 41.04242343 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Beşiktaş Meydan Taksi Dolmuş Durağı (2 Araç)",
+				"ACIKLAMA" : "BEŞİKTAŞ  GRUBU/BŞK2 BEŞİKTAŞ-HARBİYE"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.8385651745, 40.9908203788 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Yenibosna İETT Durak Alanı (2 Araç)",
+				"ACIKLAMA" : "SURİÇİ GRUBU/D15 YENİBOSNA-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0241341241, 40.9957210075 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Kadıköy",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D28 KADIKÖY-ÇEKMEKÖY"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.1900411893, 41.0145290617 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Madenler Metro (1 araç)",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D58 MİMAR SİNAN MAH.-ÇEKMEKÖY METROMAH.-ÇEKMEKÖY METRO"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.984116219, 41.0375823976 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Taksim Meydan Dönüş ( 1 araç)",
+				"ACIKLAMA" : "SURİÇİ GRUBU/D46 EMİNÖNÜ-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.98735763, 41.035981908 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Taksim (İnönü Caddesi) (4 araç)",
+				"ACIKLAMA" : "BEŞİKTAŞ  GRUBU/BŞK1 BEŞİKTAŞ-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.020991792, 40.9894773685 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Depolama",
+				"ACIKLAMA" : "ÜSKÜDAR GRUBU/D28 KADIKÖY-ÇEKMEKÖY"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0379030503, 41.0821458597 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Bebek Dağı Sk Etiler Metro Çıkışı (1 araç)",
+				"ACIKLAMA" : "BEŞİKTAŞ  GRUBU/BŞK3 BEŞİKTAŞ-ORTAKÖY-KURUÇEŞME-BEBEK-BEBEK YOKUŞU-ETİLER METRO"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 28.9807177464, 41.0363937915 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Tarlabaşı Blv. ( 2 araç)",
+				"ACIKLAMA" : "SURİÇİ GRUBU/D11 BAKIRKÖY-TAKSİM"
+			}
+		},
+		{
+			"type" : "Feature",
+			"geometry" : {
+				"type" : "Point",
+				"coordinates" : [ 29.0317726535, 40.9894983519 ]
+			},
+			"properties" : {
+				"DURAK_ADI" : "Kuşdili Cad. (2 Araç)",
+				"ACIKLAMA" : "KADIKÖY GRUBU/D34 KADIKÖY-BOSTANCI"
+			}
+		}
+	]
+}

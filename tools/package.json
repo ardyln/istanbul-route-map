@@ -1,0 +1,11 @@
+{
+  "name": "istanbul-route-map-tools",
+  "version": "1.0.0",
+  "description": "Renders views of the route map SVG to PNG (headless Chrome)",
+  "license": "GPL-3.0-only",
+  "type": "commonjs",
+  "dependencies": {
+    "playwright-core": "^1.65.0"
+  },
+  "private": true
+}
