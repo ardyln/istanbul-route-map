@@ -40,7 +40,7 @@ make images   # the overview PNG and the tiles (needs: cd tools && npm install, 
 - `fetch_orders.py`: each İETT line's stop order, one request a second. It can be resumed: lines already fetched are skipped.
 - `dolmus_compile.py`: İBB's minibüs data doesn't link stops to lines.
   - Minibüs: a line's stops are the minibüs stops within 30 m of its route, in order along it.
-  - Taksi-dolmuş: these stop anywhere, so their stands (within 80 m) and the İETT stops along the route stand in as named places to get on and off. Alternative and depot routes are left out, and so are route pieces under 300 m (connectors between branches).
+  - Taksi-dolmuş: these stop anywhere, so their stands (within 80 m) and the İETT stops along the route stand in as named places to get on and off. Alternative and depot routes and depot stands are left out, and so are route pieces under 300 m (connectors between branches). A route end with no stop of its own takes the name of the nearest stop within 400 m, or "Güzergah ucu" (route end).
   - The same compiled `data/dolmus.json` feeds the dolmuş legs of the Istanbul Commute integration.
 - `schematic.py`: builds the network, keeps the places where something changes, and snaps them to a grid.
   - It draws every corridor with one 45° bend, places every name with a rotated-box overlap test, then the route tags.

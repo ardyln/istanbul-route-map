@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compile İBB's minibüs and taksi-dolmuş open data into ordered lines with named stops.
 
-Usage: python3 dolmus_compile.py <data dir> <out json> [<shapes out json>]
+Usage: python3 dolmus_compile.py <data dir> <out json, or .json.gz to gzip it> [<shapes out json>]
 
 Inputs in <data dir>: istanbul_minibus_guzergahlari.geojson, istanbul_minibus_duraklari.geojson,
 istanbul_taksidolmus_guzergahlari.geojson, istanbul_taksidolmus_duraklari.geojson (data.ibb.gov.tr), and
@@ -77,6 +77,8 @@ def main(src, out, shapes_out=None):
     for f in load("istanbul_taksidolmus_duraklari.geojson")["features"]:
         lon, lat = f["geometry"]["coordinates"][:2]
         nm = re.sub(r"\s*\(.*?\)\s*", " ", f["properties"].get("DURAK_ADI") or "Dolmuş durağı").strip()
+        if nm.lower().startswith("depolama"):
+            continue  # a depot stand where dolmuş wait off duty, not a place to get on
         dstands.add(*xy(lon, lat), {"name": title(nm), "lat": lat, "lon": lon, "kind": "stand"})
     istops = Grid()
     for d in load("iett_stops.json"):
@@ -84,6 +86,12 @@ def main(src, out, shapes_out=None):
         if m:
             lon, lat = float(m.group(1)), float(m.group(2))
             istops.add(*xy(lon, lat), {"name": title(d["SDURAKADI"]), "lat": lat, "lon": lon, "kind": "iett"})
+
+    def nearest(c, limit=400.0):
+        x, y = xy(*c[:2])
+        best = min(((math.hypot(px - x, py - y), it["name"]) for g in (dstands, istops, mstops)
+                    for px, py, it in g.near(x, y, x, y, limit)), default=(None, None))
+        return best[1] if best[0] is not None and best[0] <= limit else "Güzergah ucu"
 
     out_lines, shapes = [], {}
     def add(mode, no, name, variant, parts, finders):
@@ -101,11 +109,12 @@ def main(src, out, shapes_out=None):
                 if stops and stops[-1][0] == it["name"]:
                     continue
                 stops.append([it["name"], round(it["lat"], 6), round(it["lon"], 6), round(a / 1000, 2), it["kind"]])
-            ends = title(name).split("-")
+            # a route's ends without a stop of their own take the name of the nearest stop (any kind), not the
+            # line's name: that names the outward ends, and a route can run either way
             if not stops or stops[0][3] > 0.15:
-                stops.insert(0, [ends[0].strip() or "Başlangıç", round(coords[0][1], 6), round(coords[0][0], 6), 0.0, "end"])
+                stops.insert(0, [nearest(coords[0]), round(coords[0][1], 6), round(coords[0][0], 6), 0.0, "end"])
             if stops[-1][3] < total / 1000 - 0.15:
-                stops.append([ends[-1].strip() or "Son", round(coords[-1][1], 6), round(coords[-1][0], 6), round(total / 1000, 2), "end"])
+                stops.append([nearest(coords[-1]), round(coords[-1][1], 6), round(coords[-1][0], 6), round(total / 1000, 2), "end"])
             lid = f"{mode}:{no}:{len([l for l in out_lines if l['no'] == no and l['mode'] == mode])}"
             out_lines.append({"id": lid, "mode": mode, "no": no, "name": title(name), "variant": title(variant),
                               "km": round(total / 1000, 2), "stops": stops})
@@ -123,7 +132,11 @@ def main(src, out, shapes_out=None):
     meta = {"source": "data.ibb.gov.tr: Minibüs Hatları/Durakları, Taksi Dolmuş Hatları/Durakları (İBB Açık Veri Lisansı); "
                       "İETT stops from İBB HatDurakGuzergah GetDurak_json",
             "stop_metres": STOP_M, "lines": out_lines}
-    json.dump(meta, open(out, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+    text = json.dumps(meta, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if out.endswith(".gz"):
+        import gzip
+        text = gzip.compress(text, 9, mtime=0)   # no timestamp: the same data gives the same file
+    open(out, "wb").write(text)
     if shapes_out:
         json.dump(shapes, open(shapes_out, "w"), separators=(",", ":"))
     by = collections.Counter(l["mode"] for l in out_lines)
