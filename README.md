@@ -16,7 +16,7 @@ A schematic map of Istanbul's road public transport, like the network bus maps o
 | İETT bus lines (Metrobüs included) | 772 of 782 (the other 10 are depot runs, the spare-fleet code, the Büyükada taxi and the Tünel funicular) |
 | Minibüs lines | 156 |
 | Taksi-dolmuş lines | 18 |
-| Stops | 10,802 places, every one named |
+| Stops | 10,592 places, every one named |
 | Data | 9 November 2026 |
 
 How to read it:
@@ -26,7 +26,7 @@ How to read it:
 - **Places:** both sides of a road count as one place, as do same-name stops within 300 m (never across the Metrobüs).
   - Minibüs and dolmuş stops join an İETT stop of the same name within 150 m.
   - Interchanges, terminals and branch points are circles; stops in between are small dots, spaced evenly along the corridor.
-  - Names along level corridors are set at 45°. Where a name has no room, it moves out with a thin leader line. About 3.5 % of the names still touch something.
+  - Names along level corridors are set at 45°. Where a name has no room, it moves out with a thin leader line. About 3.4 % of the names still touch something.
 - **Geography:** each place keeps roughly its real position, but the centre is enlarged (a logarithmic stretch around the Bosphorus mouth). Corridors bend where their real roads bend. The Bosphorus and the Golden Horn are drawn as pale bands.
 
 ## How it's made
