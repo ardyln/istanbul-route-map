@@ -10,8 +10,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser('~/iett-route-map.svg')
-GEOGRAPHY = float(os.environ.get('GEOGRAPHY', 1.0))  # share of true distances (1: true scale); the rest spreads stops evenly
-STEPS = int(os.environ.get('STEPS', 700))            # grid steps across the map, west to east (700: about 230 m a step)
+WARP = os.environ.get('WARP', 'elastic')             # elastic: room where the stops are, square by square; blend: per axis
+GEOGRAPHY = float(os.environ.get('GEOGRAPHY', 1.0))  # WARP=blend: share of true distances (1: true scale)
+STEPS = int(os.environ.get('STEPS', 700))            # WARP=blend: grid steps across the map, west to east
+ELASTIC_STEPS = int(os.environ.get('ELASTIC_STEPS', 830))  # WARP=elastic: grid steps across the stretched map
+BASE = float(os.environ.get('BASE', 0.3))           # WARP=elastic: room for empty land, as a share of where stops are
+MIN_GAP = float(os.environ.get('MIN_GAP', 1.5))      # grid steps every stop gets along its line, at least
+COAST_EPS = float(os.environ.get('COAST_EPS', 2.0))
+COAST_PIECE = float(os.environ.get('COAST_PIECE', 6.0))  # grid steps: longer stretches of shore are straightened in pieces  # grid steps of coastline detail smoothed away before it's straightened
 SCALE = float(os.environ.get('SCALE', 32))           # px per grid step to start from; grows only if a name or line has no room
 GROW = 1.15                                          # how much larger each attempt is
 FS_STOP, FS_KEY, FS_HUB = 5.5, 7.0, 9.5         # px
@@ -119,6 +125,13 @@ def bends(pts, eps):
     return bends(pts[:i + 1], eps) + [i] + [i + j for j in bends(pts[i:], eps)]
 
 
+# -- land and water ---------------------------------------------------------------------------------------
+import geo  # noqa: E402  (next to this file)
+SEA = '#d4e6f4'
+GEO_BOX = (27.90, 40.70, 30.00, 41.62)   # lon/lat box the coastline was fetched for (see Makefile)
+LAND = geo.land_polygons(f'{HERE}/data/geo/coastline.json', GEO_BOX) if os.path.exists(f'{HERE}/data/geo/coastline.json') else []
+LAKES = geo.lakes(f'{HERE}/data/geo/water.json') if LAND and os.path.exists(f'{HERE}/data/geo/water.json') else []
+
 # -- layout: stops spread out evenly, partly; then snapped to a grid ----------------------------------------
 LAT0, LON0 = 41.035, 29.01
 def lin(lat, lon):
@@ -134,24 +147,45 @@ def _cdf(vals, v):
     lo, hi = vals[i - 1], vals[i]
     return (i - 1 + (v - lo) / (hi - lo or 1)) / (len(vals) - 1)
 GRID = (X_MAX - X_MIN) / STEPS
-def warp(lat, lon):
+def blend(lat, lon):
     """Each axis: GEOGRAPHY of the true distance, the rest by how many stops lie before it, so a dense
     district far out (Esenyurt) gets as much room as one in the centre, and empty forest and sea shrink."""
     x, y = lin(lat, lon)
     return (GEOGRAPHY * (x - X_MIN) + (1 - GEOGRAPHY) * _cdf(_xs, x) * (X_MAX - X_MIN),
             GEOGRAPHY * (y - Y_MIN) + (1 - GEOGRAPHY) * _cdf(_ys, y) * (Y_MAX - Y_MIN))
+warp = blend
+if WARP == 'elastic':
+    import elastic  # noqa: E402
+    import hashlib, pickle  # noqa: E401,E402
+    _box = (X_MIN - 8, Y_MIN - 8, X_MAX + 8, Y_MAX + 8)
+    _land_km = [[lin(lat, lon) for lon, lat in ring] for ring in LAND]
+    _key = hashlib.sha1(repr((sorted(_pts), _box, BASE, len(LAND), sum(len(r) for r in LAND))).encode()).hexdigest()[:16]
+    _cache = f'{HERE}/data/cartogram-{_key}.pickle'      # the flow takes a minute; the same stops give the same sheet
+    if os.path.exists(_cache):
+        _sheet = pickle.load(open(_cache, 'rb'))
+    else:
+        _sheet = elastic.Elastic(_pts, _box, base=BASE, land=_land_km)
+        pickle.dump(_sheet, open(_cache, 'wb'))
+    def warp(lat, lon):
+        return _sheet(*lin(lat, lon))
+    _w = [warp(*pos[g]) for g in adj]
+    GRID = (max(p[0] for p in _w) - min(p[0] for p in _w)) / ELASTIC_STEPS
+
 for a, b, chain in chains():      # keep where a corridor really bends, so it follows its roads
     pts = [warp(*pos[g]) for g in [a] + chain + [b]]
     for i in bends([(x / GRID, y / GRID) for x, y in pts], 2.5):
         key.add(([a] + chain + [b])[i])
 
 taken, grid = {}, {}
+GAP = int(os.environ.get('GAP', 2))   # grid steps between places, at least: a free grid line between neighbouring lines
+def _clear(cx, cy):
+    return all((cx + i, cy + j) not in taken for i in range(1 - GAP, GAP) for j in range(1 - GAP, GAP))
 def snap(g):
     x, y = warp(*pos[g])
     gx, gy = round(x / GRID), round(y / GRID)
     for rad in range(0, 40):
         cells = [(gx + dx, gy + dy) for dx in range(-rad, rad + 1) for dy in range(-rad, rad + 1)
-                 if max(abs(dx), abs(dy)) == rad and (gx + dx, gy + dy) not in taken]
+                 if max(abs(dx), abs(dy)) == rad and _clear(gx + dx, gy + dy)]
         if cells:
             best = min(cells, key=lambda c: (c[0] - x / GRID) ** 2 + (c[1] - y / GRID) ** 2)
             taken[best] = g; grid[g] = best
@@ -166,7 +200,7 @@ def path_steps(a, b):
     return d * math.sqrt(2) + max(abs(x2 - x1), abs(y2 - y1)) - d
 # no squishing: a corridor needs a grid step for every stop along it, else its middle stop becomes a place of
 # its own (on its own grid point), until every corridor has room
-MIN_STEPS = 1.0
+MIN_STEPS = MIN_GAP
 passes = 0
 while True:
     passes += 1
@@ -195,12 +229,51 @@ for a, b, chain, ls in sorted(corridors, key=lambda c: (len(c[3]), c[0], c[1])):
     vx, vy = warp(*via_real)
     paths.append((a, b, chain, ls, octi(grid[a], grid[b], (vx / GRID, vy / GRID))))
 
-# -- land and water ---------------------------------------------------------------------------------------
-import geo  # noqa: E402  (next to this file)
-SEA = '#d4e6f4'
-GEO_BOX = (27.90, 40.70, 30.00, 41.62)   # lon/lat box the coastline was fetched for (see Makefile)
-LAND = geo.land_polygons(f'{HERE}/data/geo/coastline.json', GEO_BOX) if os.path.exists(f'{HERE}/data/geo/coastline.json') else []
-LAKES = geo.lakes(f'{HERE}/data/geo/water.json') if LAND and os.path.exists(f'{HERE}/data/geo/water.json') else []
+
+def _dp_keep(pts, eps):
+    """Douglas–Peucker: indices kept (ends included)."""
+    keep = {0, len(pts) - 1}
+    stack = [(0, len(pts) - 1)]
+    while stack:
+        i, j = stack.pop()
+        (x1, y1), (x2, y2) = pts[i], pts[j]
+        L = math.hypot(x2 - x1, y2 - y1) or 1e-9
+        best, k = 0.0, None
+        for m in range(i + 1, j):
+            d = abs((x2 - x1) * (y1 - pts[m][1]) - (x1 - pts[m][0]) * (y2 - y1)) / L
+            if d > best: best, k = d, m
+        if k is not None and best > eps:
+            keep.add(k); stack += [(i, k), (k, j)]
+    return sorted(keep)
+def _octi_ring(ring, P):
+    """A coastline or lake shore smoothed (COAST_EPS grid steps) and straightened to 0/45/90°, like the lines;
+    "" when it shrinks to nothing."""
+    pts = [(warp(lat, lon)[0] / GRID, warp(lat, lon)[1] / GRID) for lon, lat in ring]
+    if pts[0] == pts[-1] and len(pts) > 3:     # a ring: split at its farthest point so both halves keep their shape
+        k = max(range(len(pts)), key=lambda m: math.dist(pts[0], pts[m]))
+        idx = _dp_keep(pts[:k + 1], COAST_EPS) + [k + i for i in _dp_keep(pts[k:], COAST_EPS)][1:]
+    else:
+        idx = _dp_keep(pts, COAST_EPS)
+    # a long stretch drawn with one 45° bend can stray far from the shore: cut it into pieces of COAST_PIECE
+    cut = [idx[0]]
+    for a, b in zip(idx, idx[1:]):
+        run = 0.0
+        for m in range(a + 1, b):
+            run += math.dist(pts[m - 1], pts[m])
+            if run >= COAST_PIECE:
+                cut.append(m); run = 0.0
+        cut.append(b)
+    idx = cut
+    out = []
+    for a, b in zip(idx, idx[1:]):
+        pa, pb = (round(pts[a][0]), round(pts[a][1])), (round(pts[b][0]), round(pts[b][1]))
+        if pa == pb: continue
+        mid = pts[(a + b) // 2]
+        for q in octi(pa, pb, mid)[:-1]:
+            if not out or out[-1] != q: out.append(q)
+    if len(set(out)) < 3:
+        return ""
+    return "M" + "L".join(f"{P(q)[0]:.0f},{P(q)[1]:.0f}" for q in out) + "Z"
 
 # -- colours ----------------------------------------------------------------------------------------------
 BUS = ('#9ec5e8', '#5a9bd4', '#2f6fb3', '#163f7a')
@@ -399,15 +472,14 @@ def draw(SCALE):
            'font-family="Inter, Roboto, Helvetica, Arial, sans-serif">', f'<rect width="{W:.0f}" height="{H:.0f}" fill="#fbfaf7"/>']
     if LAND:     # the sea is the background; land over it, lakes over the land (OpenStreetMap)
         svg[1] = f'<rect width="{W:.0f}" height="{H:.0f}" fill="{SEA}"/>'
-        proj = lambda lon, lat: P((warp(lat, lon)[0] / GRID, warp(lat, lon)[1] / GRID))
-        ring = lambda r: "M" + "L".join(f"{x:.0f},{y:.0f}" for x, y in geo.simplify([proj(*q) for q in r], 1.0)) + "Z"
+        ring = lambda r: _octi_ring(r, P)
         svg.append(f'<path fill="#fbfaf7" stroke="#b9c9d6" stroke-width="1" d="{"".join(ring(r) for r in LAND)}"/>')
         svg.append(f'<path fill="{SEA}" fill-rule="evenodd" d="{"".join(ring(r) for outer, inner in LAKES for r in outer + inner)}"/>')
     svg += svg_lines + svg_dots + tags + svg_labels
     n_mini = len({l for l in all_lines if l[0] == 'minibus'}); n_dol = len({l for l in all_lines if l[0] == 'dolmus'})
     svg.append(f'<text x="40" y="70" font-size="52" font-weight="700" fill="#111">Istanbul buses, minibüs and dolmuş</text>'
                f'<text x="40" y="104" font-size="20" fill="#444">{n_iett} İETT lines (incl. Metrobüs) · {n_mini} minibüs lines · {n_dol} taksi-dolmuş lines · '
-               f'{len(adj)} stops, every one named · {"true scale, lines straightened to 45° and 90°" if GEOGRAPHY >= 1 else "schematic, not to scale"} · '
+               f'{len(adj)} stops, every one named · {"stretched where the stops are dense, lines and shores straightened to 45° and 90°" if WARP == "elastic" else "true scale, lines straightened to 45° and 90°" if GEOGRAPHY >= 1 else "schematic, not to scale"} · '
                f'data: İBB open data, İETT, OpenStreetMap contributors (land and water), 9 November 2026</text>')
     KEYS = [("İETT bus, 1–2 lines", BUS[0], ''), ("3–5", BUS[1], ''), ("6–12", BUS[2], ''), ("13+", BUS[3], ''), ("Metrobüs", '#e2231a', ''),
             ("Minibüs", MINI[1], ''), ("Taksi-dolmuş", DOLMUS, ' stroke-dasharray="8 4"')]
@@ -429,6 +501,18 @@ while True:
         break
     scale *= GROW
 open(OUT, 'w').write(text)
+if WARP == 'elastic':
+    _nn = []
+    _keyset = sorted(key)
+    _cells = collections.defaultdict(list)
+    for g in _keyset: _cells[(grid[g][0] // 4, grid[g][1] // 4)].append(g)
+    for g in _keyset:
+        cx, cy = grid[g][0] // 4, grid[g][1] // 4
+        _nn.append(min((math.dist(grid[g], grid[h]) for i in (-1, 0, 1) for j in (-1, 0, 1)
+                        for h in _cells.get((cx + i, cy + j), ()) if h != g), default=99))
+    _nn.sort()
+    print(f"cartogram: {_sheet.folded} folded cells; grid step {GRID * 1000:.0f} m of stretched map; places' nearest neighbour: "
+          f"median {_nn[len(_nn) // 2]:.1f} steps, {sum(1 for d in _nn if d < 2) * 100 / len(_nn):.0f} % closer than 2 steps")
 print(f"{n_iett} İETT + {st['n_mini']} minibüs + {st['n_dol']} dolmuş lines; {len(adj)} stops, {len(key)} key places "
       f"({passes - 1} splitting passes against squishing), {len(corridors)} corridors, every stop at least {squish:.2f} grid steps "
       f"from the next; places moved from where they are: median {moved['median'] * 1000:.0f} m, 95 % within "

@@ -3,3 +3,4 @@ scratch/
 *.part
 *.xml
 __pycache__/
+data/cartogram-*.pickle

@@ -1,12 +1,12 @@
 # Istanbul route map
 
-A map of Istanbul's road public transport at true scale, drawn like a city bus map: every İETT bus line
-(Metrobüs included), every minibüs line and every taksi-dolmuş line, with every stop named. The lines are straightened to
-45° and 90° over the real coastline, the Bosphorus and the lakes.
+A map of Istanbul's road public transport, drawn like a city bus map: every İETT bus line (Metrobüs included), every
+minibüs line and every taksi-dolmuş line, with every stop named. Land is stretched where the stops are dense, so every
+district has room; lines and shores are straightened to 45° and 90°.
 
 ![Overview](out/istanbul-route-map-overview.png)
 
-- **The map:** [`out/istanbul-route-map.svg`](out/istanbul-route-map.svg) (30,470 × 14,516 px, about 185 px per km). Open it in a browser and zoom in.
+- **The map:** [`out/istanbul-route-map.svg`](out/istanbul-route-map.svg) (27,200 × 13,376 px). Open it in a browser and zoom in.
 - **Full-resolution PNG tiles,** 4 columns × 3 rows: [`out/tiles/`](out/tiles/) (`tile-r1-c1.png` is the top left).
 - **The overview above,** at a quarter of the size: [`out/istanbul-route-map-overview.png`](out/istanbul-route-map-overview.png).
 
@@ -26,12 +26,14 @@ How to read it:
   - Route numbers are printed in tags along the corridors, and every line is named at least once.
 - **Places:** both sides of a road count as one place, as do same-name stops within 300 m (never across the Metrobüs).
   - Minibüs and dolmuş stops join an İETT stop of the same name within 150 m.
-  - Interchanges, terminals and branch points are circles; stops in between are small dots, spaced evenly along the corridor. No line is squished: every stop has at least one grid step (about 230 m, 42 px) to itself. Where a corridor would be too short for its stops, the stops in its middle get grid points of their own, until there's room.
+  - Interchanges, terminals and branch points are circles; stops in between are small dots, spaced evenly along the corridor. No line is squished, and lines don't fill every grid line: places keep at least two grid steps apart (a free grid line between neighbouring lines), and every stop along a line has at least 1.5 steps. Where a corridor would be too short for its stops, the stops in its middle get grid points of their own, until there's room.
   - Names along level corridors are set at 45°. Where a name has no room beside its stop, it moves further out with a thin leader line. **No text overlaps**: no name or route tag touches another one or a stop dot. Text is sized with each character's real width, the widest of the common sans-serif fonts, and the real height above and below the line (accents on capitals included). If anything had no room, the whole map would be drawn larger until it did. `make check` measures every name and tag as Chrome draws it and reports any overlap: 0.
-- **Geography:** true scale everywhere, from Silivri to Şile, so nothing is squished at the edges.
-  - Places are snapped to a grid of about 230 m. A place moves only where two stops would share a grid point: by a median of 108 m, 95 % within 268 m, at most 723 m.
-  - Corridors bend where their real roads bend.
-  - The land, the sea (the Bosphorus and the Golden Horn included) and the lakes come from OpenStreetMap's coastline and water areas.
+- **Geography:** a diffusion cartogram (Gastner & Newman) stretches the land where the stops are.
+  - Stop density spreads out like heat until it's even, and every point moves with the flow. The flow is smooth, so nothing folds: neighbours stay neighbours.
+  - Dense places get room wherever they are. One km becomes about 3–5 km in Kadıköy, Şişli, Esenyurt and Silivri, and about 2 km in empty forest.
+  - The sea keeps the land's average density, so it keeps its size and the coast its shape.
+  - Places are snapped to the grid and moved off each other where needed: a median of 93 m, at most about 1 km.
+  - The coastline and lakes (OpenStreetMap) go through the same stretch. They're smoothed and drawn at 0°, 45° and 90° like the lines, in short pieces so they stay close to the real shore.
 
 ## How it's made
 
@@ -50,7 +52,7 @@ make check    # every name and route tag measured as Chrome draws it; reports an
 - `schematic.py`: builds the network, keeps the places where something changes, and snaps them to a grid.
   - It splits corridors that are too short for their stops, and draws every corridor with one 45° bend.
   - It places every name with a rotated-box overlap test against the names, tags and stop dots already placed, then the route tags. Every line gets at least one tag.
-  - The same data always gives the same map. Layout settings come from the environment: `GEOGRAPHY` (share of true distance, 1 = true scale; lower values spread dense areas instead), `STEPS` (grid steps west to east, 700), `SCALE` (px per step to start from, 32; it grows until every name fits, here to 42.3).
+  - The same data always gives the same map. Layout settings come from the environment: `WARP` (`elastic`: the cartogram, the default; `blend` with `GEOGRAPHY=1`: true scale), `BASE` (room for empty land, 0.3), `ELASTIC_STEPS` (grid steps across, 830), `GAP` (grid steps between places, 2), `MIN_GAP` (steps for each stop along a line, 1.5), `COAST_EPS` and `COAST_PIECE` (shore smoothing and piece length, in grid steps), `SCALE` (px per step to start from, 32; it grows if a name has no room). `elastic.py` is the cartogram. Its result is cached in `data/cartogram-*.pickle`, because it takes about a minute.
 - `tools/measure_chars.js` measures each character's width in the installed fonts, into `tools/charwidths.json`. `tools/check_overlaps.js` is the independent check behind `make check`.
 
 ## Data
