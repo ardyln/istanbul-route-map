@@ -10,8 +10,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser('~/iett-route-map.svg')
-WARP = os.environ.get('WARP', 'elastic')             # elastic: room where the stops are, square by square; blend: per axis
-GEOGRAPHY = float(os.environ.get('GEOGRAPHY', 1.0))  # WARP=blend: share of true distances (1: true scale)
+MODE = os.environ.get('MODE', 'schematic')           # geographic: every stop where it really is, lines stop to stop, real shores
+GEO_STEP = float(os.environ.get('GEO_STEP', 0.1))    # MODE=geographic: km per layout unit (labels and dots are sized in px)
+WARP = 'blend' if MODE == 'geographic' else os.environ.get('WARP', 'elastic')             # elastic: room where the stops are, square by square; blend: per axis
+GEOGRAPHY = 1.0 if MODE == 'geographic' else float(os.environ.get('GEOGRAPHY', 1.0))  # WARP=blend: share of true distances (1: true scale)
 STEPS = int(os.environ.get('STEPS', 700))            # WARP=blend: grid steps across the map, west to east
 ELASTIC_STEPS = int(os.environ.get('ELASTIC_STEPS', 830))  # WARP=elastic: grid steps across the stretched map
 BASE = float(os.environ.get('BASE', 0.3))           # WARP=elastic: room for empty land, as a share of where stops are
@@ -154,6 +156,8 @@ def blend(lat, lon):
     return (GEOGRAPHY * (x - X_MIN) + (1 - GEOGRAPHY) * _cdf(_xs, x) * (X_MAX - X_MIN),
             GEOGRAPHY * (y - Y_MIN) + (1 - GEOGRAPHY) * _cdf(_ys, y) * (Y_MAX - Y_MIN))
 warp = blend
+if MODE == 'geographic':
+    GRID = GEO_STEP
 if WARP == 'elastic':
     import elastic  # noqa: E402
     import hashlib, pickle  # noqa: E401,E402
@@ -171,7 +175,7 @@ if WARP == 'elastic':
     _w = [warp(*pos[g]) for g in adj]
     GRID = (max(p[0] for p in _w) - min(p[0] for p in _w)) / ELASTIC_STEPS
 
-for a, b, chain in chains():      # keep where a corridor really bends, so it follows its roads
+for a, b, chain in (chains() if MODE != 'geographic' else []):      # keep where a corridor really bends
     pts = [warp(*pos[g]) for g in [a] + chain + [b]]
     for i in bends([(x / GRID, y / GRID) for x, y in pts], 2.5):
         key.add(([a] + chain + [b])[i])
@@ -191,8 +195,12 @@ def snap(g):
             taken[best] = g; grid[g] = best
             return
     raise RuntimeError(f"no free grid point near {name.get(g, g)}")
-for g in sorted(key, key=lambda g: (-len(serves[g]), g)):      # busy places get their spot first
-    snap(g)
+if MODE == 'geographic':          # no grid: every place exactly where it is
+    for g in adj:
+        x, y = warp(*pos[g]); grid[g] = (x / GRID, y / GRID)
+else:
+    for g in sorted(key, key=lambda g: (-len(serves[g]), g)):      # busy places get their spot first
+        snap(g)
 
 def path_steps(a, b):
     (x1, y1), (x2, y2) = grid[a], grid[b]
@@ -202,7 +210,7 @@ def path_steps(a, b):
 # its own (on its own grid point), until every corridor has room
 MIN_STEPS = MIN_GAP
 passes = 0
-while True:
+while MODE != 'geographic':
     passes += 1
     split = 0
     for a, b, chain in chains():
@@ -211,7 +219,7 @@ while True:
             key.add(g); snap(g); split += 1
     if not split: break
 corridors = [(a, b, chain, edge_lines[tuple(sorted((a, (chain or [b])[0])))]) for a, b, chain in chains()]
-squish = min((path_steps(a, b) / (len(chain) + 1) for a, b, chain, _ in corridors), default=0)
+squish = 0 if MODE == 'geographic' else min((path_steps(a, b) / (len(chain) + 1) for a, b, chain, _ in corridors), default=0)
 # how far the grid moved each place from where it is (true distance on a true-scale map, GEOGRAPHY=1)
 _moved = sorted(math.dist(warp(*pos[g]), (grid[g][0] * GRID, grid[g][1] * GRID)) for g in key)
 moved = {"median": _moved[len(_moved) // 2], "p95": _moved[int(len(_moved) * 0.95)], "max": _moved[-1]}
@@ -227,7 +235,10 @@ paths = []
 for a, b, chain, ls in sorted(corridors, key=lambda c: (len(c[3]), c[0], c[1])):
     via_real = pos[chain[len(chain) // 2]] if chain else ((pos[a][0] + pos[b][0]) / 2, (pos[a][1] + pos[b][1]) / 2)
     vx, vy = warp(*via_real)
-    paths.append((a, b, chain, ls, octi(grid[a], grid[b], (vx / GRID, vy / GRID))))
+    if MODE == 'geographic':      # stop to stop, as the line runs
+        paths.append((a, b, chain, ls, [grid[a]] + [grid[c] for c in chain] + [grid[b]]))
+    else:
+        paths.append((a, b, chain, ls, octi(grid[a], grid[b], (vx / GRID, vy / GRID))))
 
 
 def _dp_keep(pts, eps):
@@ -416,7 +427,12 @@ def draw(SCALE):
         svg_lines.append(f'<polyline points="{" ".join(f"{P(p)[0]:.0f},{P(p)[1]:.0f}" for p in path)}" fill="none" stroke="{col}" '
                          f'stroke-width="{w:.1f}" stroke-linejoin="round" stroke-linecap="round"{dash}/>')
         for i, g in enumerate(chain):
-            (x, y), d = along(path, (i + 1) / (len(chain) + 1))
+            if MODE == 'geographic':  # the stop where it is; the line's direction there, from its neighbours
+                x, y = P(path[i + 1]); px_, py_ = P(path[i]); nx_, ny_ = P(path[i + 2])
+                L = math.hypot(nx_ - px_, ny_ - py_) or 1.0
+                d = ((nx_ - px_) / L, (ny_ - py_) / L)
+            else:
+                (x, y), d = along(path, (i + 1) / (len(chain) + 1))
             r = max(1.5, w / 2.6)
             svg_dots.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="#fff" stroke="{col}" stroke-width="0.9"/>')
             occupy(box(x - r, y - r, x + r, y + r))
@@ -472,14 +488,19 @@ def draw(SCALE):
            'font-family="Inter, Roboto, Helvetica, Arial, sans-serif">', f'<rect width="{W:.0f}" height="{H:.0f}" fill="#fbfaf7"/>']
     if LAND:     # the sea is the background; land over it, lakes over the land (OpenStreetMap)
         svg[1] = f'<rect width="{W:.0f}" height="{H:.0f}" fill="{SEA}"/>'
-        ring = lambda r: _octi_ring(r, P)
+        if MODE == 'geographic':  # the real shore, only thinned to what shows at this scale
+            def ring(r):
+                pts = geo.simplify([P((warp(lat, lon)[0] / GRID, warp(lat, lon)[1] / GRID)) for lon, lat in r], 0.6)
+                return "M" + "L".join(f"{x:.1f},{y:.1f}" for x, y in pts) + "Z" if len(pts) > 3 else ""
+        else:
+            ring = lambda r: _octi_ring(r, P)
         svg.append(f'<path fill="#fbfaf7" stroke="#b9c9d6" stroke-width="1" d="{"".join(ring(r) for r in LAND)}"/>')
         svg.append(f'<path fill="{SEA}" fill-rule="evenodd" d="{"".join(ring(r) for outer, inner in LAKES for r in outer + inner)}"/>')
     svg += svg_lines + svg_dots + tags + svg_labels
     n_mini = len({l for l in all_lines if l[0] == 'minibus'}); n_dol = len({l for l in all_lines if l[0] == 'dolmus'})
     svg.append(f'<text x="40" y="70" font-size="52" font-weight="700" fill="#111">Istanbul buses, minibüs and dolmuş</text>'
                f'<text x="40" y="104" font-size="20" fill="#444">{n_iett} İETT lines (incl. Metrobüs) · {n_mini} minibüs lines · {n_dol} taksi-dolmuş lines · '
-               f'{len(adj)} stops, every one named · {"stretched where the stops are dense, lines and shores straightened to 45° and 90°" if WARP == "elastic" else "true scale, lines straightened to 45° and 90°" if GEOGRAPHY >= 1 else "schematic, not to scale"} · '
+               f'{len(adj)} stops, every one named · {"true geography: every stop where it is, lines from stop to stop" if MODE == "geographic" else "stretched where the stops are dense, lines and shores straightened to 45° and 90°" if WARP == "elastic" else "true scale, lines straightened to 45° and 90°" if GEOGRAPHY >= 1 else "schematic, not to scale"} · '
                f'data: İBB open data, İETT, OpenStreetMap contributors (land and water), 9 November 2026</text>')
     KEYS = [("İETT bus, 1–2 lines", BUS[0], ''), ("3–5", BUS[1], ''), ("6–12", BUS[2], ''), ("13+", BUS[3], ''), ("Metrobüs", '#e2231a', ''),
             ("Minibüs", MINI[1], ''), ("Taksi-dolmuş", DOLMUS, ' stroke-dasharray="8 4"')]
@@ -501,7 +522,7 @@ while True:
         break
     scale *= GROW
 open(OUT, 'w').write(text)
-if WARP == 'elastic':
+if WARP == 'elastic' and MODE != 'geographic':
     _nn = []
     _keyset = sorted(key)
     _cells = collections.defaultdict(list)
@@ -513,8 +534,13 @@ if WARP == 'elastic':
     _nn.sort()
     print(f"cartogram: {_sheet.folded} folded cells; grid step {GRID * 1000:.0f} m of stretched map; places' nearest neighbour: "
           f"median {_nn[len(_nn) // 2]:.1f} steps, {sum(1 for d in _nn if d < 2) * 100 / len(_nn):.0f} % closer than 2 steps")
-print(f"{n_iett} İETT + {st['n_mini']} minibüs + {st['n_dol']} dolmuş lines; {len(adj)} stops, {len(key)} key places "
-      f"({passes - 1} splitting passes against squishing), {len(corridors)} corridors, every stop at least {squish:.2f} grid steps "
-      f"from the next; places moved from where they are: median {moved['median'] * 1000:.0f} m, 95 % within "
-      f"{moved['p95'] * 1000:.0f} m, at most {moved['max'] * 1000:.0f} m; {st['W']}x{st['H']}px at {scale:.1f} px a step; {st['labels']} names, none overlapping "
-      f"({st['leader']} with a leader line); all {st['lines']} lines named -> {OUT}")
+if MODE == 'geographic':
+    print(f"{n_iett} İETT + {st['n_mini']} minibüs + {st['n_dol']} dolmuş lines; {len(adj)} stops, every one where it really is, "
+          f"lines stop to stop; {st['W']}x{st['H']}px ({scale / GRID:.0f} px a km); {st['labels']} names, none overlapping "
+          f"({st['leader']} with a leader line); all {st['lines']} lines named -> {OUT}")
+else:
+    print(f"{n_iett} İETT + {st['n_mini']} minibüs + {st['n_dol']} dolmuş lines; {len(adj)} stops, {len(key)} key places "
+          f"({passes - 1} splitting passes against squishing), {len(corridors)} corridors, every stop at least {squish:.2f} grid steps "
+          f"from the next; places moved from where they are: median {moved['median'] * 1000:.0f} m, 95 % within "
+          f"{moved['p95'] * 1000:.0f} m, at most {moved['max'] * 1000:.0f} m; {st['W']}x{st['H']}px at {scale:.1f} px a step; {st['labels']} names, none overlapping "
+          f"({st['leader']} with a leader line); all {st['lines']} lines named -> {OUT}")

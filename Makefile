@@ -1,6 +1,7 @@
 # make data   - download every İETT line and stop (İBB), each line's stop order (İETT), the minibüs/dolmuş data (İBB),
 #               and the coastline and lakes (OpenStreetMap, via Overpass)
-# make map    - compile the minibüs/dolmuş routes and draw the map (out/istanbul-route-map.svg)
+# make map    - compile the minibüs/dolmuş routes and draw both maps: out/istanbul-route-map.svg (schematic) and
+#               out/geographic/istanbul-route-map-geographic.svg (every stop where it is, lines stop to stop)
 # make images - the overview PNG and the 4×3 full-resolution tiles (needs: cd tools && npm install, and Google Chrome)
 # make check  - measures every name and route tag as Chrome draws it and reports any that overlap
 IBB := https://api.ibb.gov.tr/iett/UlasimAnaVeri/HatDurakGuzergah.asmx
@@ -27,12 +28,15 @@ data:
 
 map:
 	python3 dolmus_compile.py data/dolmus data/dolmus.json data/dolmus_shapes.json
-	mkdir -p out && python3 schematic.py out/istanbul-route-map.svg
+	mkdir -p out out/geographic && python3 schematic.py out/istanbul-route-map.svg
+	MODE=geographic SCALE=18 python3 schematic.py out/geographic/istanbul-route-map-geographic.svg
 
 images:
 	tools/images.sh out/istanbul-route-map.svg out
+	tools/images.sh out/geographic/istanbul-route-map-geographic.svg out/geographic
 
 check:
 	node tools/check_overlaps.js out/istanbul-route-map.svg
+	node tools/check_overlaps.js out/geographic/istanbul-route-map-geographic.svg
 
 .PHONY: data map images check

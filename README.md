@@ -10,6 +10,21 @@ district has room; lines and shores are straightened to 45° and 90°.
 - **Full-resolution PNG tiles,** 4 columns × 3 rows: [`out/tiles/`](out/tiles/) (`tile-r1-c1.png` is the top left).
 - **The overview above,** at a quarter of the size: [`out/istanbul-route-map-overview.png`](out/istanbul-route-map-overview.png).
 
+### Geographic version
+
+The same lines, stops and names without any stretching or straightening, as a fallback when the schematic map's
+shapes need checking against the real city:
+- **Exact positions:** every stop where it really is, at true scale (180 px per km).
+- **Lines:** drawn from stop to stop in the order they run, so they follow the roads as closely as their stops do.
+- **Real shores:** the coastline and lakes as OpenStreetMap has them.
+- **Names:** every stop and every line is named, with no overlapping text (`make check` covers both maps). The centre is dense, so 2,046 names sit on leader lines.
+
+![Geographic overview](out/geographic/istanbul-route-map-geographic-overview.png)
+
+- **The map:** [`out/geographic/istanbul-route-map-geographic.svg`](out/geographic/istanbul-route-map-geographic.svg) (29,178 × 13,619 px).
+- **Tiles:** [`out/geographic/tiles/`](out/geographic/tiles/), 4 × 3.
+- **Build it alone:** `MODE=geographic SCALE=18 python3 schematic.py out.svg`. `make map` builds both.
+
 ## What's on it
 
 | | |
