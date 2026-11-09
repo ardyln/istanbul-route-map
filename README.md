@@ -10,6 +10,16 @@ Bosphorus and the lakes. The lines are straightened to 0°, 45° and 90° along 
 - **Full-resolution PNG tiles,** 4 columns × 3 rows: [`out/tiles/`](out/tiles/) (`tile-r1-c1.png` is the top left).
 - **The overview above,** at a quarter of the size: [`out/istanbul-route-map-overview.png`](out/istanbul-route-map-overview.png).
 
+### Online viewer
+
+**<https://ardyln.github.io/istanbul-route-map/>**: the whole map in the browser, with pan, zoom and stop search. Click a stop to see its lines. Two sliders redraw the map in a fraction of a second:
+- **Squishing:** 0 is true scale. Higher values stretch the land where the stops are dense, along the flow of a diffusion cartogram worked out beforehand, so busy districts get room.
+- **Snappiness:** 0 draws lines from stop to stop. Higher values smooth them more and straighten them to 0°, 45° and 90° on a coarser grid.
+
+Toggles switch to straightened shores and hide the minibüs or dolmuş lines. The settings are kept in the address, so a view can be shared.
+
+The viewer runs the same rules as `schematic.py` (`docs/layout.js`, in a background thread): every stop and line named, and no overlapping text, measured with the browser's own fonts. `make viewer` rebuilds its data (`docs/network.json`).
+
 ### Geographic version
 
 The same lines, stops and names with nothing straightened, as a fallback:

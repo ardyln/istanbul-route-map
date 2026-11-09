@@ -574,6 +574,41 @@ def draw(SCALE):
     stats.update(W=round(W), H=round(H), labels=len(stop_spots) + len(key), lines=len(all_lines), n_mini=n_mini, n_dol=n_dol)
     return "\n".join(svg), stats
 
+if os.environ.get('EXPORT'):
+    # the network for the online viewer (docs/): places in true km, corridors, lines, shores, and the cartogram's flow
+    import base64, numpy as np, elastic  # noqa: E401
+    gidx = {g: i for i, g in enumerate(sorted(adj))}
+    lines_l = sorted({l for ls in edge_lines.values() for l in ls}, key=order)
+    lidx = {l: i for i, l in enumerate(lines_l)}
+    places_out = []
+    for g in sorted(adj):
+        x, y = lin(*pos[g])
+        places_out.append([name[g], round(x, 4), round(y, 4), len(serves[g]),
+                           (1 if is_mb(g) else 0) | (2 if g in key else 0) | (4 if g in terminals else 0)])
+    corr_out = [[gidx[a], gidx[b], [gidx[c] for c in chain], sorted(lidx[l] for l in ls)] for a, b, chain, ls in corridors]
+    def ring_km(r, eps=0.015):
+        return [[round(x, 3), round(y, 3)] for x, y in geo.simplify([lin(lat, lon) for lon, lat in r], eps)]
+    land_out = [rk for rk in (ring_km(r) for r in LAND) if len(rk) > 3]
+    lakes_out = [[[ring_km(r) for r in outer], [ring_km(r) for r in inner]] for outer, inner in LAKES]
+    _pts_all = [lin(*pos[g]) for g in adj]
+    _xs2, _ys2 = [p[0] for p in _pts_all], [p[1] for p in _pts_all]
+    box = (min(_xs2) - 8, min(_ys2) - 8, max(_xs2) + 8, max(_ys2) + 8)
+    sheet = elastic.Elastic(_pts_all, box, base=float(os.environ.get('BASE', 0.3)),
+                            land=[[lin(lat, lon) for lon, lat in r] for r in LAND], snapshots=10)
+    step = 4                                           # 2 km mesh is plenty for a smooth flow
+    i0, j0 = int((box[1] - sheet.oy) / sheet.cell), int((box[0] - sheet.ox) / sheet.cell)
+    i1, j1 = int((box[3] - sheet.oy) / sheet.cell) + step, int((box[2] - sheet.ox) / sheet.cell) + step
+    frames = [f[i0:i1 + 1:step, j0:j1 + 1:step] for f in sheet.frames]
+    mesh = {"x0": sheet.ox + j0 * sheet.cell, "y0": sheet.oy + i0 * sheet.cell, "step": sheet.cell * step,
+            "nx": frames[0].shape[1], "ny": frames[0].shape[0], "folded": sheet.folded,
+            "frames": [base64.b64encode(np.asarray(f, dtype=np.float32).tobytes()).decode() for f in frames]}
+    out = {"made": "9 November 2026", "places": places_out, "lines": [[m, c] for m, c in lines_l], "corridors": corr_out,
+           "land": land_out, "lakes": lakes_out, "mesh": mesh}
+    json.dump(out, open(os.environ['EXPORT'], 'w'), ensure_ascii=False, separators=(",", ":"))
+    print(f"exported {len(places_out)} places, {len(corr_out)} corridors, {len(lines_l)} lines, {len(land_out)} land rings, "
+          f"{len(lakes_out)} lakes, mesh {mesh['nx']}x{mesh['ny']} x {len(frames)} frames ({sheet.folded} folded) -> {os.environ['EXPORT']}")
+    sys.exit(0)
+
 scale = SCALE
 while True:
     text, st = draw(scale)

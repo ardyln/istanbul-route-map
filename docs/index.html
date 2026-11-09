@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%226%22 fill=%22%232f6fb3%22/%3E%3C/svg%3E">
+<title>Istanbul route map: buses, minibüs and dolmuş</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: Inter, Roboto, Helvetica, Arial, sans-serif; background: #d4e6f4; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
+  canvas.drag { cursor: grabbing; }
+  #panel { position: fixed; top: 12px; left: 12px; width: 300px; max-width: calc(100vw - 24px); background: #fffffff2; border-radius: 10px;
+           box-shadow: 0 2px 12px #0003; padding: 12px 14px; font-size: 13px; color: #222; box-sizing: border-box; }
+  #panel h1 { font-size: 16px; margin: 0 0 2px; }
+  #panel .sub { color: #555; font-size: 12px; margin-bottom: 10px; }
+  label.slider { display: block; margin: 10px 0 2px; font-weight: 600; }
+  label.slider span { font-weight: 400; color: #555; float: right; }
+  input[type=range] { width: 100%; }
+  .hint { color: #666; font-size: 11.5px; line-height: 1.35; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+  .row label { display: flex; gap: 4px; align-items: center; }
+  #status { margin-top: 10px; color: #444; font-size: 12px; min-height: 2.6em; }
+  #search { width: 100%; box-sizing: border-box; margin-top: 10px; padding: 5px 8px; border: 1px solid #bbb; border-radius: 6px; font: inherit; }
+  #results { list-style: none; margin: 4px 0 0; padding: 0; max-height: 180px; overflow: auto; }
+  #results li { padding: 3px 6px; cursor: pointer; border-radius: 4px; }
+  #results li:hover { background: #e8eefc; }
+  #info { position: fixed; bottom: 12px; left: 12px; max-width: min(420px, calc(100vw - 24px)); background: #fffffff2; border-radius: 10px;
+          box-shadow: 0 2px 12px #0003; padding: 10px 14px; font-size: 13px; display: none; }
+  #toggle { position: fixed; top: 12px; left: 12px; display: none; border: 0; border-radius: 8px; padding: 6px 10px; background: #fff; box-shadow: 0 2px 8px #0003; font: inherit; }
+  .key { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 8px; font-size: 11.5px; color: #333; }
+  .key i { display: inline-block; width: 18px; height: 5px; border-radius: 3px; vertical-align: middle; margin-right: 4px; }
+  a { color: #2f6fb3; }
+</style>
+</head>
+<body>
+<canvas id="map"></canvas>
+<button id="toggle">☰ Map settings</button>
+<div id="panel">
+  <h1>Istanbul route map</h1>
+  <div class="sub">Every İETT bus, Metrobüs, minibüs and taksi-dolmuş line, every stop named. <a id="hide" href="#">Hide</a></div>
+  <label class="slider">Squishing <span id="squishV"></span></label>
+  <input id="squish" type="range" min="0" max="100" step="5" value="0">
+  <div class="hint">0: true scale. Higher: land stretched where the stops are dense (a diffusion cartogram), so busy districts get room.</div>
+  <label class="slider">Snappiness <span id="snapV"></span></label>
+  <input id="snap" type="range" min="0" max="10" step="1" value="5">
+  <div class="hint">0: lines from stop to stop, as they run. Higher: smoother, straightened to 0°, 45° and 90°, on a coarser grid.</div>
+  <div class="row">
+    <label><input id="straightCoast" type="checkbox"> Straight shores</label>
+    <label><input id="minibus" type="checkbox" checked> Minibüs</label>
+    <label><input id="dolmus" type="checkbox" checked> Dolmuş</label>
+  </div>
+  <div class="key"><span><i style="background:#2f6fb3"></i>İETT bus</span><span><i style="background:#e2231a"></i>Metrobüs</span>
+    <span><i style="background:#4fb878"></i>Minibüs</span><span><i style="background:#f08c1e"></i>Taksi-dolmuş</span></div>
+  <input id="search" type="search" placeholder="Find a stop…" autocomplete="off">
+  <ul id="results"></ul>
+  <div id="status">Loading the network…</div>
+  <div class="hint">Data: İBB open data and İETT (9 November 2026); land and water © OpenStreetMap contributors (ODbL).
+    <a href="https://github.com/ardyln/istanbul-route-map">Source</a></div>
+</div>
+<div id="info"></div>
+<script src="viewer.js"></script>
+</body>
+</html>

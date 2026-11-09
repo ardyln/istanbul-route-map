@@ -10,7 +10,7 @@ import numpy as np
 
 
 class Elastic:
-    def __init__(self, points, box, cell=0.5, base=0.3, blur=2.0, pad=0.5, land=None):
+    def __init__(self, points, box, cell=0.5, base=0.3, blur=2.0, pad=0.5, land=None, snapshots=0):
         """points: (x, y) in km of every stop; box (x0, y0, x1, y1) in km; cell km per grid cell; base: density of
         empty land as a share of the mean density where there are stops (lower: forest shrinks more). land: rings
         of (x, y) km; the sea outside them keeps the land's average density, so it keeps its size and the coast
@@ -47,6 +47,8 @@ class Elastic:
         gy, gx = np.mgrid[0:NY + 1, 0:NX + 1].astype(float)
         P = np.stack([gx.ravel(), gy.ravel()], axis=1)
         t, steps = 0.0, 0
+        P0 = P.copy()
+        frames = []           # (mean displacement so far, mesh) along the way, for showing the stretch partly done
         t_end = 4.0 * (max(NX, NY) / np.pi) ** 2        # long enough for the density to be even
         while t < t_end and steps < 4000:
             decay = np.exp(-k2 * t)
@@ -58,9 +60,19 @@ class Elastic:
             dt = min(0.2 / vmax, t_end - t, max(t, 1.0))  # move at most a fifth of a cell a step
             P += dt * np.stack([_interp(vx, P), _interp(vy, P)], axis=1)
             t += dt; steps += 1
+            if snapshots:
+                frames.append((float(np.abs(P - P0).mean()), P.copy()))
             if vmax * dt < 1e-4 and t > 50:
                 break
         self.steps = steps
+        # snapshots: the mesh when the average point has moved 1/n, 2/n ... of its whole way (frame 0 is unmoved)
+        self.frames = []
+        if snapshots and frames:
+            final = frames[-1][0] or 1.0
+            for k in range(snapshots + 1):
+                want = final * k / snapshots
+                m = P0 if k == 0 else next(f for d, f in frames if d >= want - 1e-12)
+                self.frames.append((m.reshape(NY + 1, NX + 1, 2) * cell) + np.array([self.ox, self.oy]))
         self.V = (P.reshape(NY + 1, NX + 1, 2) * cell) + np.array([self.ox, self.oy])
         c = self.V
         cross = ((c[:-1, 1:, 0] - c[:-1, :-1, 0]) * (c[1:, :-1, 1] - c[:-1, :-1, 1])
