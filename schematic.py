@@ -6,11 +6,12 @@ coordinates), lines/*.json from fetch_orders.py (each İETT line's stop order), 
 dolmus_compile.py (minibüs and taksi-dolmuş routes with their stops in order).
 """
 import bisect, json, glob, math, re, collections, html, sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser('~/iett-route-map.svg')
-GEOGRAPHY = float(os.environ.get('GEOGRAPHY', 0.3))  # share of true distances; the rest spreads stops evenly
-STEPS = int(os.environ.get('STEPS', 760))            # grid steps across the map, west to east
+GEOGRAPHY = float(os.environ.get('GEOGRAPHY', 1.0))  # share of true distances (1: true scale); the rest spreads stops evenly
+STEPS = int(os.environ.get('STEPS', 700))            # grid steps across the map, west to east (700: about 230 m a step)
 SCALE = float(os.environ.get('SCALE', 32))           # px per grid step to start from; grows only if a name or line has no room
 GROW = 1.15                                          # how much larger each attempt is
 FS_STOP, FS_KEY, FS_HUB = 5.5, 7.0, 9.5         # px
@@ -177,6 +178,9 @@ while True:
     if not split: break
 corridors = [(a, b, chain, edge_lines[tuple(sorted((a, (chain or [b])[0])))]) for a, b, chain in chains()]
 squish = min((path_steps(a, b) / (len(chain) + 1) for a, b, chain, _ in corridors), default=0)
+# how far the grid moved each place from where it is (true distance on a true-scale map, GEOGRAPHY=1)
+_moved = sorted(math.dist(warp(*pos[g]), (grid[g][0] * GRID, grid[g][1] * GRID)) for g in key)
+moved = {"median": _moved[len(_moved) // 2], "p95": _moved[int(len(_moved) * 0.95)], "max": _moved[-1]}
 
 def octi(a, b, via):
     (x1, y1), (x2, y2) = a, b
@@ -190,6 +194,13 @@ for a, b, chain, ls in sorted(corridors, key=lambda c: (len(c[3]), c[0], c[1])):
     via_real = pos[chain[len(chain) // 2]] if chain else ((pos[a][0] + pos[b][0]) / 2, (pos[a][1] + pos[b][1]) / 2)
     vx, vy = warp(*via_real)
     paths.append((a, b, chain, ls, octi(grid[a], grid[b], (vx / GRID, vy / GRID))))
+
+# -- land and water ---------------------------------------------------------------------------------------
+import geo  # noqa: E402  (next to this file)
+SEA = '#d4e6f4'
+GEO_BOX = (27.90, 40.70, 30.00, 41.62)   # lon/lat box the coastline was fetched for (see Makefile)
+LAND = geo.land_polygons(f'{HERE}/data/geo/coastline.json', GEO_BOX) if os.path.exists(f'{HERE}/data/geo/coastline.json') else []
+LAKES = geo.lakes(f'{HERE}/data/geo/water.json') if LAND and os.path.exists(f'{HERE}/data/geo/water.json') else []
 
 # -- colours ----------------------------------------------------------------------------------------------
 BUS = ('#9ec5e8', '#5a9bd4', '#2f6fb3', '#163f7a')
@@ -386,17 +397,18 @@ def draw(SCALE):
 
     svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.0f}" height="{H:.0f}" viewBox="0 0 {W:.0f} {H:.0f}" '
            'font-family="Inter, Roboto, Helvetica, Arial, sans-serif">', f'<rect width="{W:.0f}" height="{H:.0f}" fill="#fbfaf7"/>']
-    BOSPHORUS = [(41.235, 29.115), (41.205, 29.085), (41.175, 29.07), (41.14, 29.075), (41.115, 29.07), (41.09, 29.065),
-                 (41.075, 29.055), (41.06, 29.045), (41.045, 29.033), (41.035, 29.012), (41.025, 29.0), (41.01, 29.0), (40.99, 29.0)]
-    HORN = [(41.052, 28.935), (41.042, 28.944), (41.035, 28.951), (41.028, 28.961), (41.022, 28.972), (41.018, 28.982)]
-    for pts, wd in ((BOSPHORUS, 1.6), (HORN, 0.9)):
-        dd = " ".join(f"{(warp(*p)[0] / GRID - X0) * SCALE:.0f},{(warp(*p)[1] / GRID - Y0) * SCALE:.0f}" for p in pts)
-        svg.append(f'<polyline points="{dd}" fill="none" stroke="#cfe3f2" stroke-width="{wd * SCALE:.0f}" stroke-linejoin="round" stroke-linecap="round"/>')
+    if LAND:     # the sea is the background; land over it, lakes over the land (OpenStreetMap)
+        svg[1] = f'<rect width="{W:.0f}" height="{H:.0f}" fill="{SEA}"/>'
+        proj = lambda lon, lat: P((warp(lat, lon)[0] / GRID, warp(lat, lon)[1] / GRID))
+        ring = lambda r: "M" + "L".join(f"{x:.0f},{y:.0f}" for x, y in geo.simplify([proj(*q) for q in r], 1.0)) + "Z"
+        svg.append(f'<path fill="#fbfaf7" stroke="#b9c9d6" stroke-width="1" d="{"".join(ring(r) for r in LAND)}"/>')
+        svg.append(f'<path fill="{SEA}" fill-rule="evenodd" d="{"".join(ring(r) for outer, inner in LAKES for r in outer + inner)}"/>')
     svg += svg_lines + svg_dots + tags + svg_labels
     n_mini = len({l for l in all_lines if l[0] == 'minibus'}); n_dol = len({l for l in all_lines if l[0] == 'dolmus'})
     svg.append(f'<text x="40" y="70" font-size="52" font-weight="700" fill="#111">Istanbul buses, minibüs and dolmuş</text>'
                f'<text x="40" y="104" font-size="20" fill="#444">{n_iett} İETT lines (incl. Metrobüs) · {n_mini} minibüs lines · {n_dol} taksi-dolmuş lines · '
-               f'{len(adj)} stops, every one named · schematic, not to scale · data: İBB open data and İETT, 9 November 2026</text>')
+               f'{len(adj)} stops, every one named · {"true scale, lines straightened to 45° and 90°" if GEOGRAPHY >= 1 else "schematic, not to scale"} · '
+               f'data: İBB open data, İETT, OpenStreetMap contributors (land and water), 9 November 2026</text>')
     KEYS = [("İETT bus, 1–2 lines", BUS[0], ''), ("3–5", BUS[1], ''), ("6–12", BUS[2], ''), ("13+", BUS[3], ''), ("Metrobüs", '#e2231a', ''),
             ("Minibüs", MINI[1], ''), ("Taksi-dolmuş", DOLMUS, ' stroke-dasharray="8 4"')]
     for i, (lab, col, dash) in enumerate(KEYS):
@@ -419,5 +431,6 @@ while True:
 open(OUT, 'w').write(text)
 print(f"{n_iett} İETT + {st['n_mini']} minibüs + {st['n_dol']} dolmuş lines; {len(adj)} stops, {len(key)} key places "
       f"({passes - 1} splitting passes against squishing), {len(corridors)} corridors, every stop at least {squish:.2f} grid steps "
-      f"from the next; {st['W']}x{st['H']}px at {scale:.1f} px a step; {st['labels']} names, none overlapping "
+      f"from the next; places moved from where they are: median {moved['median'] * 1000:.0f} m, 95 % within "
+      f"{moved['p95'] * 1000:.0f} m, at most {moved['max'] * 1000:.0f} m; {st['W']}x{st['H']}px at {scale:.1f} px a step; {st['labels']} names, none overlapping "
       f"({st['leader']} with a leader line); all {st['lines']} lines named -> {OUT}")

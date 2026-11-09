@@ -1,4 +1,5 @@
-# make data   - download every İETT line and stop (İBB), each line's stop order (İETT), and the minibüs/dolmuş data (İBB)
+# make data   - download every İETT line and stop (İBB), each line's stop order (İETT), the minibüs/dolmuş data (İBB),
+#               and the coastline and lakes (OpenStreetMap, via Overpass)
 # make map    - compile the minibüs/dolmuş routes and draw the map (out/istanbul-route-map.svg)
 # make images - the overview PNG and the 4×3 full-resolution tiles (needs: cd tools && npm install, and Google Chrome)
 # make check  - measures every name and route tag as Chrome draws it and reports any that overlap
@@ -17,6 +18,12 @@ data:
 	  && curl -sSO $(DATA)/8dad4995-0071-44de-9b14-57288ec1de97/resource/9083216b-7afd-4eae-a242-cf5b09f748f4/download/istanbul_minibus_guzergahlari.geojson \
 	  && curl -sSO $(DATA)/8b4391c0-e647-4635-aaf7-5baee24c6e81/resource/0d4fbb9f-cd5f-4005-aa57-6bb76db3fc58/download/istanbul_minibus_duraklari.geojson
 	ln -sfn ../durak.json data/dolmus/iett_stops.json
+	mkdir -p data/geo
+	curl -sS -A "istanbul-route-map" -H "Accept: application/json" https://overpass-api.de/api/interpreter \
+	  --data-urlencode 'data=[out:json][timeout:240];way[natural=coastline](40.70,27.90,41.62,30.00);out geom;' -o data/geo/coastline.json
+	sleep 5
+	curl -sS -A "istanbul-route-map" -H "Accept: application/json" https://overpass-api.de/api/interpreter \
+	  --data-urlencode 'data=[out:json][timeout:240];(way[natural=water][water~"^(lake|reservoir|river|lagoon)$$"](40.70,27.90,41.62,30.00);relation[natural=water][water~"^(lake|reservoir|river|lagoon)$$"](40.70,27.90,41.62,30.00););out geom;' -o data/geo/water.json
 
 map:
 	python3 dolmus_compile.py data/dolmus data/dolmus.json data/dolmus_shapes.json
