@@ -5,14 +5,14 @@ Data (in data/): hat.json and durak.json from İBB's HatDurakGuzergah service (a
 coordinates), lines/*.json from fetch_orders.py (each İETT line's stop order), dolmus.json from
 dolmus_compile.py (minibüs and taksi-dolmuş routes with their stops in order).
 """
-import json, glob, math, re, collections, html, sys, os
+import bisect, json, glob, math, re, collections, html, sys, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser('~/iett-route-map.svg')
-R0 = float(os.environ.get('R0', 5.0))          # km; distances beyond this are squeezed logarithmically
-STRETCH = float(os.environ.get('STRETCH', 2.2))
-GRID = float(os.environ.get('GRID', 0.12))      # warped km per grid step
-SCALE = float(os.environ.get('SCALE', 36))      # px per grid step
+GEOGRAPHY = float(os.environ.get('GEOGRAPHY', 0.3))  # share of true distances; the rest spreads stops evenly
+STEPS = int(os.environ.get('STEPS', 760))            # grid steps across the map, west to east
+SCALE = float(os.environ.get('SCALE', 32))           # px per grid step to start from; grows only if a name or line has no room
+GROW = 1.15                                          # how much larger each attempt is
 FS_STOP, FS_KEY, FS_HUB = 5.5, 7.0, 9.5         # px
 
 durak = json.load(open(f'{HERE}/data/durak.json'))
@@ -117,36 +117,66 @@ def bends(pts, eps):
     i += 1
     return bends(pts[:i + 1], eps) + [i] + [i + j for j in bends(pts[i:], eps)]
 
+
+# -- layout: stops spread out evenly, partly; then snapped to a grid ----------------------------------------
 LAT0, LON0 = 41.035, 29.01
+def lin(lat, lon):
+    return (lon - LON0) * 111.32 * math.cos(math.radians(LAT0)), (LAT0 - lat) * 110.57
+_pts = [lin(*pos[g]) for g in adj]
+_xs, _ys = sorted(p[0] for p in _pts), sorted(p[1] for p in _pts)
+X_MIN, X_MAX, Y_MIN, Y_MAX = _xs[0], _xs[-1], _ys[0], _ys[-1]
+def _cdf(vals, v):
+    """Share of the stops west (or north) of v, continuous between them."""
+    if v <= vals[0]: return 0.0
+    if v >= vals[-1]: return 1.0
+    i = bisect.bisect_left(vals, v)
+    lo, hi = vals[i - 1], vals[i]
+    return (i - 1 + (v - lo) / (hi - lo or 1)) / (len(vals) - 1)
+GRID = (X_MAX - X_MIN) / STEPS
 def warp(lat, lon):
-    x = (lon - LON0) * 111.32 * math.cos(math.radians(LAT0))
-    y = (LAT0 - lat) * 110.57
-    r = math.hypot(x, y)
-    if r == 0: return 0.0, 0.0
-    s = R0 * math.log1p(r / R0) * STRETCH / r
-    return x * s, y * s
-for a, b, chain in chains():
+    """Each axis: GEOGRAPHY of the true distance, the rest by how many stops lie before it, so a dense
+    district far out (Esenyurt) gets as much room as one in the centre, and empty forest and sea shrink."""
+    x, y = lin(lat, lon)
+    return (GEOGRAPHY * (x - X_MIN) + (1 - GEOGRAPHY) * _cdf(_xs, x) * (X_MAX - X_MIN),
+            GEOGRAPHY * (y - Y_MIN) + (1 - GEOGRAPHY) * _cdf(_ys, y) * (Y_MAX - Y_MIN))
+for a, b, chain in chains():      # keep where a corridor really bends, so it follows its roads
     pts = [warp(*pos[g]) for g in [a] + chain + [b]]
     for i in bends([(x / GRID, y / GRID) for x, y in pts], 2.5):
         key.add(([a] + chain + [b])[i])
-corridors = [(a, b, chain, edge_lines[tuple(sorted((a, (chain or [b])[0])))]) for a, b, chain in chains()]
 
 taken, grid = {}, {}
-for g in sorted(key, key=lambda g: (-len(serves[g]), g)):
+def snap(g):
     x, y = warp(*pos[g])
     gx, gy = round(x / GRID), round(y / GRID)
-    best = None
-    for rad in range(0, 12):
+    for rad in range(0, 40):
         cells = [(gx + dx, gy + dy) for dx in range(-rad, rad + 1) for dy in range(-rad, rad + 1)
                  if max(abs(dx), abs(dy)) == rad and (gx + dx, gy + dy) not in taken]
         if cells:
-            best = min(cells, key=lambda c: (c[0] - x / GRID) ** 2 + (c[1] - y / GRID) ** 2); break
-    best = best or (gx, gy)
-    taken[best] = g; grid[g] = best
-xs = [c[0] for c in grid.values()]; ys = [c[1] for c in grid.values()]
-X0, Y0 = min(xs) - 10, min(ys) - 12
-W, H = (max(xs) - X0 + 10) * SCALE, (max(ys) - Y0 + 8) * SCALE
-P = lambda c: ((c[0] - X0) * SCALE, (c[1] - Y0) * SCALE)
+            best = min(cells, key=lambda c: (c[0] - x / GRID) ** 2 + (c[1] - y / GRID) ** 2)
+            taken[best] = g; grid[g] = best
+            return
+    raise RuntimeError(f"no free grid point near {name.get(g, g)}")
+for g in sorted(key, key=lambda g: (-len(serves[g]), g)):      # busy places get their spot first
+    snap(g)
+
+def path_steps(a, b):
+    (x1, y1), (x2, y2) = grid[a], grid[b]
+    d = min(abs(x2 - x1), abs(y2 - y1))
+    return d * math.sqrt(2) + max(abs(x2 - x1), abs(y2 - y1)) - d
+# no squishing: a corridor needs a grid step for every stop along it, else its middle stop becomes a place of
+# its own (on its own grid point), until every corridor has room
+MIN_STEPS = 1.0
+passes = 0
+while True:
+    passes += 1
+    split = 0
+    for a, b, chain in chains():
+        if chain and path_steps(a, b) < (len(chain) + 1) * MIN_STEPS:
+            g = chain[len(chain) // 2]
+            key.add(g); snap(g); split += 1
+    if not split: break
+corridors = [(a, b, chain, edge_lines[tuple(sorted((a, (chain or [b])[0])))]) for a, b, chain in chains()]
+squish = min((path_steps(a, b) / (len(chain) + 1) for a, b, chain, _ in corridors), default=0)
 
 def octi(a, b, via):
     (x1, y1), (x2, y2) = a, b
@@ -155,19 +185,11 @@ def octi(a, b, via):
     sx, sy = (dx > 0) - (dx < 0), (dy > 0) - (dy < 0)
     options = ((x1 + sx * d, y1 + sy * d), (x2 - sx * d, y2 - sy * d))
     return [a, min(options, key=lambda p: (p[0] - via[0]) ** 2 + (p[1] - via[1]) ** 2), b]
-def along(path, frac):
-    """Point and unit direction at `frac` of a path's length (in px)."""
-    pts = [P(p) for p in path]
-    segs = [math.dist(p, q) for p, q in zip(pts, pts[1:])]
-    t = frac * (sum(segs) or 1)
-    for (p, q), s in zip(zip(pts, pts[1:]), segs):
-        if s > 0 and t <= s:
-            return (p[0] + (q[0] - p[0]) * t / s, p[1] + (q[1] - p[1]) * t / s), ((q[0] - p[0]) / s, (q[1] - p[1]) / s)
-        t -= s
-    for p, q in zip(pts[::-1][1:], pts[::-1]):
-        s = math.dist(p, q)
-        if s > 0: return pts[-1], ((q[0] - p[0]) / s, (q[1] - p[1]) / s)
-    return pts[-1], (1.0, 0.0)
+paths = []
+for a, b, chain, ls in sorted(corridors, key=lambda c: (len(c[3]), c[0], c[1])):
+    via_real = pos[chain[len(chain) // 2]] if chain else ((pos[a][0] + pos[b][0]) / 2, (pos[a][1] + pos[b][1]) / 2)
+    vx, vy = warp(*via_real)
+    paths.append((a, b, chain, ls, octi(grid[a], grid[b], (vx / GRID, vy / GRID))))
 
 # -- colours ----------------------------------------------------------------------------------------------
 BUS = ('#9ec5e8', '#5a9bd4', '#2f6fb3', '#163f7a')
@@ -181,177 +203,221 @@ def colour(ls):
     if m <= {'minibus'}: return MINI[shade]
     if m <= {'dolmus'}: return DOLMUS
     return BUS[shade]
-def tag_text(l):
-    mode, line = l
-    return line
 order = lambda l: ({'metrobus': 0, 'bus': 1, 'dolmus': 2, 'minibus': 3}[l[0]],
                    re.sub(r'\D.*', '', l[1]).zfill(4) if re.match(r'\d', l[1]) else 'z' + l[1], l[1])
 
-# -- label placement: rotated rectangles, separating-axis overlap test, spatial hash ----------------------
-CELL = 48
-occupied = collections.defaultdict(list)
-def rect(px, py, w, h, ang):
-    """Corners of a text box: baseline start (px, py), width w, height h, rotated by ang degrees."""
+# -- overlap test for text: rotated rectangles, separating axes, spatial hash ------------------------------
+PAD = 0.5   # px kept clear around every piece of text
+def rect(px, py, w, h, ang, text=""):
+    """A text box from its baseline start: h is the font size; real fonts reach about 1 em above the baseline
+    and 0.25 below, measured like the browser does (getBBox), plus PAD all round."""
     ux, uy = math.cos(math.radians(ang)), math.sin(math.radians(ang))
-    vx, vy = uy, -ux                       # "up" for the text
-    b0 = (px - vx * h * 0.25, py - vy * h * 0.25)
+    vx, vy = uy, -ux
+    px, py = px - ux * PAD, py - uy * PAD
+    up = 1.14 if any(ch in "İÖÜĞÂÎÛ" for ch in text) else 1.02      # a dot or breve above a capital reaches higher
+    down = 0.34 if any(ch in "ŞÇşç" for ch in text) else 0.26       # a cedilla reaches lower
+    w, below, h = w + 2 * PAD, h * down + PAD, h * (up + down) + 2 * PAD
+    b0 = (px - vx * below, py - vy * below)
     return [b0, (b0[0] + ux * w, b0[1] + uy * w), (b0[0] + ux * w + vx * h, b0[1] + uy * w + vy * h), (b0[0] + vx * h, b0[1] + vy * h)]
-def axes(c):
-    return [(c[1][0] - c[0][0], c[1][1] - c[0][1]), (c[3][0] - c[0][0], c[3][1] - c[0][1])]
+def box(x0, y0, x1, y1):
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
 def overlap(a, b):
-    for ax in axes(a) + axes(b):
-        pa = [p[0] * ax[0] + p[1] * ax[1] for p in a]; pb = [p[0] * ax[0] + p[1] * ax[1] for p in b]
+    for p, q in ((a[0], a[1]), (a[0], a[3]), (b[0], b[1]), (b[0], b[3])):
+        ax = (q[0] - p[0], q[1] - p[1])
+        pa = [x * ax[0] + y * ax[1] for x, y in a]; pb = [x * ax[0] + y * ax[1] for x, y in b]
         if max(pa) <= min(pb) or max(pb) <= min(pa): return False
     return True
-def cells_of(c):
-    xs_, ys_ = [p[0] for p in c], [p[1] for p in c]
-    return [(i, j) for i in range(int(min(xs_) // CELL), int(max(xs_) // CELL) + 1)
-            for j in range(int(min(ys_) // CELL), int(max(ys_) // CELL) + 1)]
-def hits(c):
-    seen = set(); n = 0
-    for cell in cells_of(c):
-        for k, other in occupied[cell]:
-            if k not in seen and overlap(c, other):
-                seen.add(k); n += 1
-    return n
-_nid = [0]
-def occupy(c):
-    _nid[0] += 1
-    for cell in cells_of(c): occupied[cell].append((_nid[0], c))
-def text_w(t, fs): return len(t) * fs * 0.56 + 1
+# each character's width in em: the widest of the common sans-serif fonts (tools/measure_chars.js), so a
+# name sized with it fits whichever a viewer's browser picks
+_CW = json.load(open(f'{HERE}/tools/charwidths.json'))['widths'] if os.path.exists(f'{HERE}/tools/charwidths.json') else {}
+def text_w(t, fs):
+    return sum(_CW.get(ch, 0.72) for ch in t) * fs + 1.5
 
-svg_lines, svg_dots, svg_labels = [], [], []
-stats = collections.Counter()
-def place_label(x, y, text, fs, cands, weight=400, fill='#111'):
-    """cands: [(dx, dy, angle, anchor 'start'|'end')] offsets from the dot; first free wins, then further out."""
-    w, h = text_w(text, fs), fs * 1.15
-    best = None
-    for ring in (1.0, 2.0, 3.2):
-        for dx, dy, ang, anchor in cands:
-            px, py = x + dx * ring, y + dy * ring
-            if anchor == 'end':
-                px -= math.cos(math.radians(ang)) * w; py -= math.sin(math.radians(ang)) * w
-            c = rect(px, py, w, h, ang)
-            n = hits(c)
-            if best is None or n < best[0]: best = (n, px, py, ang, c, ring)
-            if n == 0: break
-        if best[0] == 0: break
-    n, px, py, ang, c, ring = best
-    stats['labels'] += 1
-    if n: stats['crowded'] += 1
-    if ring > 1: stats['leader'] += 1
-    occupy(c)
-    if ring > 1:   # a short leader line from the dot to a label moved out
-        mx, my = (c[0][0] + c[3][0]) / 2, (c[0][1] + c[3][1]) / 2
-        svg_labels.append(f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{mx:.1f}" y2="{my:.1f}" stroke="#888" stroke-width="0.4"/>')
-    rot = f' transform="rotate({ang:.0f} {px:.1f} {py:.1f})"' if ang else ''
-    svg_labels.append(f'<text x="{px:.1f}" y="{py:.1f}" font-size="{fs}" font-weight="{weight}" fill="{fill}"{rot} '
-                      f'stroke="#fbfaf7" stroke-width="{fs * 0.32:.1f}" paint-order="stroke">{html.escape(text)}</text>')
+def draw(SCALE):
+    """The whole map at SCALE px per grid step; returns the SVG and how many names or tags had no free spot."""
+    CELL = 48
+    occupied = collections.defaultdict(list)
+    nid = [0]
+    def cells_of(c):
+        xs_, ys_ = [p[0] for p in c], [p[1] for p in c]
+        return [(i, j) for i in range(int(min(xs_) // CELL), int(max(xs_) // CELL) + 1)
+                for j in range(int(min(ys_) // CELL), int(max(ys_) // CELL) + 1)]
+    def free(c):
+        for cell in cells_of(c):
+            for _, other in occupied[cell]:
+                if overlap(c, other): return False
+        return True
+    def occupy(c):
+        nid[0] += 1
+        for cell in cells_of(c): occupied[cell].append((nid[0], c))
 
-def stop_cands(d, r):
-    """Label spots for a stop on a corridor going in direction d (unit vector, screen coords)."""
-    o = r + 2
-    if abs(d[1]) < 0.2:                       # horizontal: names at 45°, above or below
-        return [(o * 0.5, -o, -45, 'start'), (-o * 0.5, o, -45, 'end'), (o * 0.5, -o, -60, 'start'), (-o * 0.5, o, -60, 'end')]
-    if abs(d[0]) < 0.2:                       # vertical: names level, right or left
-        return [(o, FS_STOP * 0.35, 0, 'start'), (-o, FS_STOP * 0.35, 0, 'end'), (o, 0, -20, 'start'), (-o, FS_STOP * 0.7, 20, 'end')]
-    perp = -45 if d[0] * d[1] > 0 else 45     # diagonal: across the line, or level beside it
-    return [(o, FS_STOP * 0.35, 0, 'start'), (-o, FS_STOP * 0.35, 0, 'end'),
-            (o * 0.7, -o * 0.7 if perp == -45 else o * 0.7, perp, 'start'), (-o * 0.7, o * 0.7 if perp == -45 else -o * 0.7, perp, 'end')]
-def key_cands(r, fs):
-    o = r + 2
-    return [(o, fs * 0.35, 0, 'start'), (-o, fs * 0.35, 0, 'end'), (-text_w('x', fs), -o, 0, 'start'), (o * 0.7, -o * 0.7, -45, 'start'),
-            (-o * 0.7, o * 0.7, -45, 'end'), (o * 0.7, o * 0.7 + fs, 0, 'start'), (-o * 0.7, -o * 0.7, 0, 'end'), (0, o + fs, 0, 'start')]
+    xs = [c[0] for c in grid.values()]; ys = [c[1] for c in grid.values()]
+    X0, Y0 = min(xs) - 10, min(ys) - 14
+    W, H = (max(xs) - X0 + 10) * SCALE, (max(ys) - Y0 + 8) * SCALE
+    P = lambda c: ((c[0] - X0) * SCALE, (c[1] - Y0) * SCALE)
+    def along(path, frac):
+        pts = [P(p) for p in path]
+        segs = [math.dist(p, q) for p, q in zip(pts, pts[1:])]
+        t = frac * (sum(segs) or 1)
+        for (p, q), s in zip(zip(pts, pts[1:]), segs):
+            if s > 0 and t <= s:
+                return (p[0] + (q[0] - p[0]) * t / s, p[1] + (q[1] - p[1]) * t / s), ((q[0] - p[0]) / s, (q[1] - p[1]) / s)
+            t -= s
+        for p, q in zip(pts[::-1][1:], pts[::-1]):
+            s = math.dist(p, q)
+            if s > 0: return pts[-1], ((q[0] - p[0]) / s, (q[1] - p[1]) / s)
+        return pts[-1], (1.0, 0.0)
 
-# -- draw ---------------------------------------------------------------------------------------------------
-svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.0f}" height="{H:.0f}" viewBox="0 0 {W:.0f} {H:.0f}" '
-       'font-family="Inter, Roboto, Helvetica, Arial, sans-serif">', f'<rect width="{W:.0f}" height="{H:.0f}" fill="#fbfaf7"/>']
-BOSPHORUS = [(41.235, 29.115), (41.205, 29.085), (41.175, 29.07), (41.14, 29.075), (41.115, 29.07), (41.09, 29.065),
-             (41.075, 29.055), (41.06, 29.045), (41.045, 29.033), (41.035, 29.012), (41.025, 29.0), (41.01, 29.0), (40.99, 29.0)]
-HORN = [(41.052, 28.935), (41.042, 28.944), (41.035, 28.951), (41.028, 28.961), (41.022, 28.972), (41.018, 28.982)]
-for pts, w in ((BOSPHORUS, 40), (HORN, 22)):
-    d = " ".join(f"{(warp(*p)[0] / GRID - X0) * SCALE:.0f},{(warp(*p)[1] / GRID - Y0) * SCALE:.0f}" for p in pts)
-    svg.append(f'<polyline points="{d}" fill="none" stroke="#cfe3f2" stroke-width="{w}" stroke-linejoin="round" stroke-linecap="round"/>')
+    stats = collections.Counter()
+    failed = []
+    svg_lines, svg_dots, svg_labels, tags = [], [], [], []
+    occupy(box(0, 0, 1500, 175))          # the title and key
+    def place_label(x, y, text, fs, cands, weight=400):
+        w, h = text_w(text, fs), fs
+        for ring in (1.0, 1.8, 2.8, 4.0, 5.5, 7.5):
+            for dx, dy, ang, anchor in cands:
+                px, py = x + dx * ring, y + dy * ring
+                if anchor == 'end':
+                    px -= math.cos(math.radians(ang)) * w; py -= math.sin(math.radians(ang)) * w
+                c = rect(px, py, w, h, ang, text)
+                if free(c):
+                    occupy(c)
+                    if ring > 1:
+                        mx, my = (c[0][0] + c[3][0]) / 2, (c[0][1] + c[3][1]) / 2
+                        svg_labels.append(f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{mx:.1f}" y2="{my:.1f}" stroke="#888" stroke-width="0.4"/>')
+                        stats['leader'] += 1
+                    rot = f' transform="rotate({ang:.0f} {px:.1f} {py:.1f})"' if ang else ''
+                    svg_labels.append(f'<text x="{px:.1f}" y="{py:.1f}" font-size="{fs}" font-weight="{weight}" fill="#111"{rot} '
+                                      f'stroke="#fbfaf7" stroke-width="{fs * 0.32:.1f}" paint-order="stroke">{html.escape(text)}</text>')
+                    return True
+        # still nowhere: a spiral of level spots further out, joined by a leader line
+        for radius in range(int(3 * fs), int(40 * fs), int(1.5 * fs)):
+            for k in range(16):
+                ang = 2 * math.pi * k / 16
+                px, py = x + math.cos(ang) * radius, y + math.sin(ang) * radius
+                if math.cos(ang) < -0.3: px -= w
+                c = rect(px, py, w, h, 0, text)
+                if free(c):
+                    occupy(c)
+                    mx, my = (c[0][0] + c[3][0]) / 2 if math.cos(ang) >= -0.3 else (c[1][0] + c[2][0]) / 2, (c[0][1] + c[3][1]) / 2
+                    svg_labels.append(f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{mx:.1f}" y2="{my:.1f}" stroke="#888" stroke-width="0.4"/>')
+                    svg_labels.append(f'<text x="{px:.1f}" y="{py:.1f}" font-size="{fs}" font-weight="{weight}" fill="#111" '
+                                      f'stroke="#fbfaf7" stroke-width="{fs * 0.32:.1f}" paint-order="stroke">{html.escape(text)}</text>')
+                    stats['leader'] += 1; stats['far'] += 1
+                    return True
+        stats['no_room'] += 1
+        failed.append((text, round(x), round(y)))
+        return False
+    def stop_cands(d, r):
+        o = r + 2
+        if abs(d[1]) < 0.2:
+            return [(o * 0.5, -o, -45, 'start'), (-o * 0.5, o, -45, 'end'), (o * 0.5, -o, -60, 'start'), (-o * 0.5, o, -60, 'end'),
+                    (o * 0.3, -o, -90, 'start'), (-o * 0.3, o, -90, 'end')]
+        if abs(d[0]) < 0.2:
+            return [(o, FS_STOP * 0.35, 0, 'start'), (-o, FS_STOP * 0.35, 0, 'end'), (o, 0, -20, 'start'), (-o, FS_STOP * 0.7, 20, 'end'),
+                    (o, -FS_STOP * 0.4, -35, 'start'), (-o, FS_STOP, 35, 'end')]
+        perp = -45 if d[0] * d[1] > 0 else 45
+        return [(o, FS_STOP * 0.35, 0, 'start'), (-o, FS_STOP * 0.35, 0, 'end'),
+                (o * 0.7, -o * 0.7 if perp == -45 else o * 0.7, perp, 'start'), (-o * 0.7, o * 0.7 if perp == -45 else -o * 0.7, perp, 'end')]
+    def key_cands(r, fs):
+        o = r + 2
+        return [(o, fs * 0.35, 0, 'start'), (-o, fs * 0.35, 0, 'end'), (o * 0.7, -o * 0.7, -45, 'start'), (-o * 0.7, o * 0.7, -45, 'end'),
+                (o * 0.7, o * 0.7 + fs, 0, 'start'), (-o * 0.7, -o * 0.7, 0, 'end'), (0, -o, 0, 'start'), (0, o + fs, 0, 'start')]
 
-corridor_draw, stop_spots = [], []
-for a, b, chain, ls in sorted(corridors, key=lambda c: (len(c[3]), c[0], c[1])):
-    via_real = pos[chain[len(chain) // 2]] if chain else ((pos[a][0] + pos[b][0]) / 2, (pos[a][1] + pos[b][1]) / 2)
-    vx, vy = warp(*via_real)
-    path = octi(grid[a], grid[b], (vx / GRID, vy / GRID))
-    w = min(1.8 + len(ls) * 0.4, 11)
-    col = colour(ls)
-    dash = ' stroke-dasharray="5 2.5"' if {m for m, _ in ls} == {'dolmus'} else ''
-    svg_lines.append(f'<polyline points="{" ".join(f"{P(p)[0]:.0f},{P(p)[1]:.0f}" for p in path)}" fill="none" stroke="{col}" '
-                     f'stroke-width="{w:.1f}" stroke-linejoin="round" stroke-linecap="round"{dash}/>')
-    for i, g in enumerate(chain):
-        (x, y), d = along(path, (i + 1) / (len(chain) + 1))
-        r = max(1.5, w / 2.6)
-        svg_dots.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="#fff" stroke="{col}" stroke-width="0.9"/>')
-        stop_spots.append((g, x, y, d, r))
-    corridor_draw.append((ls, path, col))
-for g in sorted(key):
-    x, y = P(grid[g])
-    n = len(serves[g])
-    r = 2.6 + min(n, 30) * 0.12
-    fill = '#e2231a' if is_mb(g) else '#fff'
-    svg_dots.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="{fill}" stroke="#111" stroke-width="1.1"/>')
-# names: every place. Dots and lines block nothing; names keep clear of each other and of route tags.
-for g in sorted(key, key=lambda g: (-len(serves[g]), g)):
-    x, y = P(grid[g]); n = len(serves[g])
-    fs = FS_HUB if n >= 10 else FS_KEY
-    place_label(x, y, name[g], fs, key_cands(2.6 + min(n, 30) * 0.12, fs), weight=600 if n >= 10 else 500)
-for g, x, y, d, r in stop_spots:
-    place_label(x, y, name[g], FS_STOP, stop_cands(d, r))
-# route numbers along corridors, where there's room; then every line still unnamed gets one somewhere
-tags, shown = [], set()
-def put_tag(x, y, nums, col, force=False):
-    items = [tag_text(l) for l in nums]
-    rows = [" ".join(items[i:i + 8]) for i in range(0, len(items), 8)][:6]
-    if len(items) > 48: rows[-1] += f" +{len(items) - 48}"
-    fs = 6.4
-    tw = max(len(r) for r in rows) * fs * 0.6 + 5; th = len(rows) * fs * 1.2 + 3
-    c = [(x - tw / 2, y - th / 2), (x + tw / 2, y - th / 2), (x + tw / 2, y + th / 2), (x - tw / 2, y + th / 2)]
-    if hits(c) and not force: return False
-    occupy(c)
-    shown.update(nums[:48])
-    tags.append(f'<g><rect x="{x - tw / 2:.1f}" y="{y - th / 2:.1f}" width="{tw:.1f}" height="{th:.1f}" rx="2" fill="#fff" stroke="{col}" stroke-width="0.7"/>'
-                + "".join(f'<text x="{x:.1f}" y="{y - th / 2 + fs * 1.2 * (i + 1):.1f}" font-size="{fs}" text-anchor="middle" fill="#111">{html.escape(r)}</text>'
-                          for i, r in enumerate(rows)) + '</g>')
-    return True
-for ls, path, col in sorted(corridor_draw, key=lambda c: (-len(c[0]), sorted(c[0], key=order), P(c[1][0]))):
-    nums = sorted(ls, key=order)
-    for frac in (0.5, 0.35, 0.65):
-        (x, y), _ = along(path, frac)
-        if put_tag(x, y, nums, col): break
-all_lines = {l for ls, _, _ in corridor_draw for l in ls}
-for ls, path, col in sorted(corridor_draw, key=lambda c: (len(c[0]), sorted(c[0], key=order), P(c[1][0]))):
-    left = [l for l in sorted(ls, key=order) if l not in shown]
-    if not left: continue
-    done = False
-    for frac in (0.5, 0.3, 0.7, 0.15, 0.85):
-        (x, y), d = along(path, frac)
-        for ox, oy in ((0, 0), (-d[1] * 9, d[0] * 9), (d[1] * 9, -d[0] * 9), (-d[1] * 16, d[0] * 16), (d[1] * 16, -d[0] * 16)):
-            if put_tag(x + ox, y + oy, left, col): done = True; break
-        if done: break
-for ls, path, col in corridor_draw:      # last resort: a line with no free spot anywhere still gets named
-    left = [l for l in sorted(ls, key=order) if l not in shown]
-    if left:
-        (x, y), _ = along(path, 0.5); put_tag(x, y, left, col, force=True); stats['forced_tags'] += 1
+    corridor_draw, stop_spots, key_spots = [], [], []
+    for a, b, chain, ls, path in paths:
+        w = min(1.8 + len(ls) * 0.4, 11)
+        col = colour(ls)
+        dash = ' stroke-dasharray="5 2.5"' if {m for m, _ in ls} == {'dolmus'} else ''
+        svg_lines.append(f'<polyline points="{" ".join(f"{P(p)[0]:.0f},{P(p)[1]:.0f}" for p in path)}" fill="none" stroke="{col}" '
+                         f'stroke-width="{w:.1f}" stroke-linejoin="round" stroke-linecap="round"{dash}/>')
+        for i, g in enumerate(chain):
+            (x, y), d = along(path, (i + 1) / (len(chain) + 1))
+            r = max(1.5, w / 2.6)
+            svg_dots.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="#fff" stroke="{col}" stroke-width="0.9"/>')
+            occupy(box(x - r, y - r, x + r, y + r))
+            stop_spots.append((g, x, y, d, r))
+        corridor_draw.append((ls, path, col))
+    for g in sorted(key):
+        x, y = P(grid[g])
+        n = len(serves[g])
+        r = 2.6 + min(n, 30) * 0.12
+        fill = '#e2231a' if is_mb(g) else '#fff'
+        svg_dots.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="{fill}" stroke="#111" stroke-width="1.1"/>')
+        occupy(box(x - r, y - r, x + r, y + r))
+    for g in sorted(key, key=lambda g: (-len(serves[g]), g)):
+        x, y = P(grid[g]); n = len(serves[g])
+        fs = FS_HUB if n >= 10 else FS_KEY
+        place_label(x, y, name[g], fs, key_cands(2.6 + min(n, 30) * 0.12, fs), weight=600 if n >= 10 else 500)
+    for g, x, y, d, r in stop_spots:
+        place_label(x, y, name[g], FS_STOP, stop_cands(d, r))
 
-svg += svg_lines + svg_dots + tags + svg_labels
-# title and key
-n_mini = len({l for l in all_lines if l[0] == 'minibus'}); n_dol = len({l for l in all_lines if l[0] == 'dolmus'})
-svg.append(f'<text x="40" y="70" font-size="52" font-weight="700" fill="#111">Istanbul buses, minibüs and dolmuş</text>'
-           f'<text x="40" y="104" font-size="20" fill="#444">{n_iett} İETT lines (incl. Metrobüs) · {n_mini} minibüs lines · {n_dol} taksi-dolmuş lines · '
-           f'{len(adj)} stops, every one named · schematic, not to scale, centre enlarged · data: İBB open data and İETT, 9 November 2026</text>')
-KEYS = [("İETT bus, 1–2 lines", BUS[0], ''), ("3–5", BUS[1], ''), ("6–12", BUS[2], ''), ("13+", BUS[3], ''), ("Metrobüs", '#e2231a', ''),
-        ("Minibüs", MINI[1], ''), ("Taksi-dolmuş", DOLMUS, ' stroke-dasharray="8 4"')]
-for i, (lab, col, dash) in enumerate(KEYS):
-    x = 42 + i * 190
-    svg.append(f'<line x1="{x}" y1="134" x2="{x + 50}" y2="134" stroke="{col}" stroke-width="9" stroke-linecap="round"{dash}/>'
-               f'<text x="{x + 60}" y="140" font-size="17" fill="#222">{lab}</text>')
-svg.append('</svg>')
-open(OUT, 'w').write("\n".join(svg))
-print(f"{n_iett} İETT + {n_mini} minibüs + {n_dol} dolmuş lines; {len(adj)} stops, {len(key)} key places, {len(corridors)} corridors; "
-      f"{W:.0f}x{H:.0f}px; labels {stats['labels']} (crowded {stats['crowded']}, with leader {stats['leader']}); "
-      f"lines named {len(shown & all_lines)}/{len(all_lines)} (forced {stats['forced_tags']}) -> {OUT}")
+    shown = set()
+    def put_tag(x, y, nums, col):
+        items = [l[1] for l in nums]
+        rows = [" ".join(items[i:i + 8]) for i in range(0, len(items), 8)][:6]
+        if len(items) > 48: rows[-1] += f" +{len(items) - 48}"
+        fs = 6.4
+        tw = max(text_w(r, fs) for r in rows) + 5; th = len(rows) * fs * 1.2 + 3
+        c = box(x - tw / 2 - PAD, y - th / 2 - PAD, x + tw / 2 + PAD, y + th / 2 + PAD)
+        if not free(c): return False
+        occupy(c)
+        shown.update(nums[:48])
+        tags.append(f'<g><rect x="{x - tw / 2:.1f}" y="{y - th / 2:.1f}" width="{tw:.1f}" height="{th:.1f}" rx="2" fill="#fff" stroke="{col}" stroke-width="0.7"/>'
+                    + "".join(f'<text x="{x:.1f}" y="{y - th / 2 + fs * 1.2 * (i + 1):.1f}" font-size="{fs}" text-anchor="middle" fill="#111">{html.escape(r)}</text>'
+                              for i, r in enumerate(rows)) + '</g>')
+        return True
+    for ls, path, col in sorted(corridor_draw, key=lambda c: (-len(c[0]), sorted(c[0], key=order), P(c[1][0]))):
+        nums = sorted(ls, key=order)
+        for frac in (0.5, 0.35, 0.65):
+            (x, y), _ = along(path, frac)
+            if put_tag(x, y, nums, col): break
+    all_lines = {l for ls, _, _ in corridor_draw for l in ls}
+    for ls, path, col in sorted(corridor_draw, key=lambda c: (len(c[0]), sorted(c[0], key=order), P(c[1][0]))):
+        left = [l for l in sorted(ls, key=order) if l not in shown]
+        if not left: continue
+        done = False
+        for frac in (0.5, 0.3, 0.7, 0.15, 0.85, 0.05, 0.95):
+            (x, y), d = along(path, frac)
+            for k in (0, 9, -9, 16, -16, 24, -24):
+                if put_tag(x - d[1] * k, y + d[0] * k, left, col): done = True; break
+            if done: break
+    stats['unnamed_lines'] = len(all_lines - shown)
+
+    svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.0f}" height="{H:.0f}" viewBox="0 0 {W:.0f} {H:.0f}" '
+           'font-family="Inter, Roboto, Helvetica, Arial, sans-serif">', f'<rect width="{W:.0f}" height="{H:.0f}" fill="#fbfaf7"/>']
+    BOSPHORUS = [(41.235, 29.115), (41.205, 29.085), (41.175, 29.07), (41.14, 29.075), (41.115, 29.07), (41.09, 29.065),
+                 (41.075, 29.055), (41.06, 29.045), (41.045, 29.033), (41.035, 29.012), (41.025, 29.0), (41.01, 29.0), (40.99, 29.0)]
+    HORN = [(41.052, 28.935), (41.042, 28.944), (41.035, 28.951), (41.028, 28.961), (41.022, 28.972), (41.018, 28.982)]
+    for pts, wd in ((BOSPHORUS, 1.6), (HORN, 0.9)):
+        dd = " ".join(f"{(warp(*p)[0] / GRID - X0) * SCALE:.0f},{(warp(*p)[1] / GRID - Y0) * SCALE:.0f}" for p in pts)
+        svg.append(f'<polyline points="{dd}" fill="none" stroke="#cfe3f2" stroke-width="{wd * SCALE:.0f}" stroke-linejoin="round" stroke-linecap="round"/>')
+    svg += svg_lines + svg_dots + tags + svg_labels
+    n_mini = len({l for l in all_lines if l[0] == 'minibus'}); n_dol = len({l for l in all_lines if l[0] == 'dolmus'})
+    svg.append(f'<text x="40" y="70" font-size="52" font-weight="700" fill="#111">Istanbul buses, minibüs and dolmuş</text>'
+               f'<text x="40" y="104" font-size="20" fill="#444">{n_iett} İETT lines (incl. Metrobüs) · {n_mini} minibüs lines · {n_dol} taksi-dolmuş lines · '
+               f'{len(adj)} stops, every one named · schematic, not to scale · data: İBB open data and İETT, 9 November 2026</text>')
+    KEYS = [("İETT bus, 1–2 lines", BUS[0], ''), ("3–5", BUS[1], ''), ("6–12", BUS[2], ''), ("13+", BUS[3], ''), ("Metrobüs", '#e2231a', ''),
+            ("Minibüs", MINI[1], ''), ("Taksi-dolmuş", DOLMUS, ' stroke-dasharray="8 4"')]
+    for i, (lab, col, dash) in enumerate(KEYS):
+        x = 42 + i * 190
+        svg.append(f'<line x1="{x}" y1="134" x2="{x + 50}" y2="134" stroke="{col}" stroke-width="9" stroke-linecap="round"{dash}/>'
+                   f'<text x="{x + 60}" y="140" font-size="17" fill="#222">{lab}</text>')
+    svg.append('</svg>')
+    stats['failed'] = failed[:12]
+    stats.update(W=round(W), H=round(H), labels=len(stop_spots) + len(key), lines=len(all_lines), n_mini=n_mini, n_dol=n_dol)
+    return "\n".join(svg), stats
+
+scale = SCALE
+while True:
+    text, st = draw(scale)
+    print(f"  scale {scale:.1f}: {st['W']}x{st['H']}px, names without room {st['no_room']} {st['failed'][:4]}, "
+          f"far {st['far']}, lines unnamed {st['unnamed_lines']}", flush=True)
+    if not st['no_room'] and not st['unnamed_lines']:
+        break
+    scale *= GROW
+open(OUT, 'w').write(text)
+print(f"{n_iett} İETT + {st['n_mini']} minibüs + {st['n_dol']} dolmuş lines; {len(adj)} stops, {len(key)} key places "
+      f"({passes - 1} splitting passes against squishing), {len(corridors)} corridors, every stop at least {squish:.2f} grid steps "
+      f"from the next; {st['W']}x{st['H']}px at {scale:.1f} px a step; {st['labels']} names, none overlapping "
+      f"({st['leader']} with a leader line); all {st['lines']} lines named -> {OUT}")

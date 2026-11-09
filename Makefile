@@ -1,6 +1,7 @@
 # make data   - download every İETT line and stop (İBB), each line's stop order (İETT), and the minibüs/dolmuş data (İBB)
 # make map    - compile the minibüs/dolmuş routes and draw the map (out/istanbul-route-map.svg)
 # make images - the overview PNG and the 4×3 full-resolution tiles (needs: cd tools && npm install, and Google Chrome)
+# make check  - measures every name and route tag as Chrome draws it and reports any that overlap
 IBB := https://api.ibb.gov.tr/iett/UlasimAnaVeri/HatDurakGuzergah.asmx
 DATA := https://data.ibb.gov.tr/dataset
 
@@ -22,8 +23,9 @@ map:
 	mkdir -p out && python3 schematic.py out/istanbul-route-map.svg
 
 images:
-	node tools/shot.js out/istanbul-route-map.svg out/istanbul-route-map-overview.png 4842 2925 0 0 0.25
-	mkdir -p out/tiles && for r in 0 1 2; do for c in 0 1 2 3; do \
-	  node tools/shot.js out/istanbul-route-map.svg out/tiles/tile-r$$((r+1))-c$$((c+1)).png 4843 3901 $$((c*4843)) $$((r*3901)) 1; done; done
+	tools/images.sh out/istanbul-route-map.svg out
 
-.PHONY: data map images
+check:
+	node tools/check_overlaps.js out/istanbul-route-map.svg
+
+.PHONY: data map images check
