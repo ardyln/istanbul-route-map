@@ -10,10 +10,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser('~/iett-route-map.svg')
-MODE = os.environ.get('MODE', 'schematic')           # geographic: every stop where it really is, lines stop to stop, real shores
+MODE = os.environ.get('MODE', 'snapped')             # snapped: true scale, real shores, lines straightened to 0/45/90° near
+                                                     # their real roads; geographic: lines stop to stop; schematic: stretched
+TRUE = MODE in ('geographic', 'snapped')
+SNAP_EPS = float(os.environ.get('SNAP_EPS', 1.5))    # MODE=snapped: layout units (100 m) of road wiggle smoothed away
+SNAP_PIECE = float(os.environ.get('SNAP_PIECE', 6))  # MODE=snapped: layout units; longer stretches are straightened in pieces
 GEO_STEP = float(os.environ.get('GEO_STEP', 0.1))    # MODE=geographic: km per layout unit (labels and dots are sized in px)
-WARP = 'blend' if MODE == 'geographic' else os.environ.get('WARP', 'elastic')             # elastic: room where the stops are, square by square; blend: per axis
-GEOGRAPHY = 1.0 if MODE == 'geographic' else float(os.environ.get('GEOGRAPHY', 1.0))  # WARP=blend: share of true distances (1: true scale)
+WARP = 'blend' if TRUE else os.environ.get('WARP', 'elastic')             # elastic: room where the stops are, square by square; blend: per axis
+GEOGRAPHY = 1.0 if TRUE else float(os.environ.get('GEOGRAPHY', 1.0))  # WARP=blend: share of true distances (1: true scale)
 STEPS = int(os.environ.get('STEPS', 700))            # WARP=blend: grid steps across the map, west to east
 ELASTIC_STEPS = int(os.environ.get('ELASTIC_STEPS', 830))  # WARP=elastic: grid steps across the stretched map
 BASE = float(os.environ.get('BASE', 0.3))           # WARP=elastic: room for empty land, as a share of where stops are
@@ -135,6 +139,22 @@ LAND = geo.land_polygons(f'{HERE}/data/geo/coastline.json', GEO_BOX) if os.path.
 LAKES = geo.lakes(f'{HERE}/data/geo/water.json') if LAND and os.path.exists(f'{HERE}/data/geo/water.json') else []
 
 # -- layout: stops spread out evenly, partly; then snapped to a grid ----------------------------------------
+def _dp_keep(pts, eps):
+    """Douglas–Peucker: indices kept (ends included)."""
+    keep = {0, len(pts) - 1}
+    stack = [(0, len(pts) - 1)]
+    while stack:
+        i, j = stack.pop()
+        (x1, y1), (x2, y2) = pts[i], pts[j]
+        L = math.hypot(x2 - x1, y2 - y1) or 1e-9
+        best, k = 0.0, None
+        for m in range(i + 1, j):
+            d = abs((x2 - x1) * (y1 - pts[m][1]) - (x1 - pts[m][0]) * (y2 - y1)) / L
+            if d > best: best, k = d, m
+        if k is not None and best > eps:
+            keep.add(k); stack += [(i, k), (k, j)]
+    return sorted(keep)
+
 LAT0, LON0 = 41.035, 29.01
 def lin(lat, lon):
     return (lon - LON0) * 111.32 * math.cos(math.radians(LAT0)), (LAT0 - lat) * 110.57
@@ -156,7 +176,7 @@ def blend(lat, lon):
     return (GEOGRAPHY * (x - X_MIN) + (1 - GEOGRAPHY) * _cdf(_xs, x) * (X_MAX - X_MIN),
             GEOGRAPHY * (y - Y_MIN) + (1 - GEOGRAPHY) * _cdf(_ys, y) * (Y_MAX - Y_MIN))
 warp = blend
-if MODE == 'geographic':
+if TRUE:
     GRID = GEO_STEP
 if WARP == 'elastic':
     import elastic  # noqa: E402
@@ -175,7 +195,7 @@ if WARP == 'elastic':
     _w = [warp(*pos[g]) for g in adj]
     GRID = (max(p[0] for p in _w) - min(p[0] for p in _w)) / ELASTIC_STEPS
 
-for a, b, chain in (chains() if MODE != 'geographic' else []):      # keep where a corridor really bends
+for a, b, chain in (chains() if not TRUE else []):      # keep where a corridor really bends
     pts = [warp(*pos[g]) for g in [a] + chain + [b]]
     for i in bends([(x / GRID, y / GRID) for x, y in pts], 2.5):
         key.add(([a] + chain + [b])[i])
@@ -195,9 +215,14 @@ def snap(g):
             taken[best] = g; grid[g] = best
             return
     raise RuntimeError(f"no free grid point near {name.get(g, g)}")
-if MODE == 'geographic':          # no grid: every place exactly where it is
+if TRUE:                          # every place exactly where it is (snapped mode then snaps the junctions)
     for g in adj:
         x, y = warp(*pos[g]); grid[g] = (x / GRID, y / GRID)
+    real = dict(grid)
+    if MODE == 'snapped':
+        GAP = 1
+        for g in sorted(key, key=lambda g: (-len(serves[g]), g)):
+            snap(g)
 else:
     for g in sorted(key, key=lambda g: (-len(serves[g]), g)):      # busy places get their spot first
         snap(g)
@@ -210,7 +235,7 @@ def path_steps(a, b):
 # its own (on its own grid point), until every corridor has room
 MIN_STEPS = MIN_GAP
 passes = 0
-while MODE != 'geographic':
+while not TRUE:
     passes += 1
     split = 0
     for a, b, chain in chains():
@@ -219,7 +244,7 @@ while MODE != 'geographic':
             key.add(g); snap(g); split += 1
     if not split: break
 corridors = [(a, b, chain, edge_lines[tuple(sorted((a, (chain or [b])[0])))]) for a, b, chain in chains()]
-squish = 0 if MODE == 'geographic' else min((path_steps(a, b) / (len(chain) + 1) for a, b, chain, _ in corridors), default=0)
+squish = 0 if TRUE else min((path_steps(a, b) / (len(chain) + 1) for a, b, chain, _ in corridors), default=0)
 # how far the grid moved each place from where it is (true distance on a true-scale map, GEOGRAPHY=1)
 _moved = sorted(math.dist(warp(*pos[g]), (grid[g][0] * GRID, grid[g][1] * GRID)) for g in key)
 moved = {"median": _moved[len(_moved) // 2], "p95": _moved[int(len(_moved) * 0.95)], "max": _moved[-1]}
@@ -231,31 +256,51 @@ def octi(a, b, via):
     sx, sy = (dx > 0) - (dx < 0), (dy > 0) - (dy < 0)
     options = ((x1 + sx * d, y1 + sy * d), (x2 - sx * d, y2 - sy * d))
     return [a, min(options, key=lambda p: (p[0] - via[0]) ** 2 + (p[1] - via[1]) ** 2), b]
+def _snapped_path(a, b, chain):
+    """A corridor's real path (its stops in order) smoothed by SNAP_EPS, cut into pieces of at most SNAP_PIECE,
+    with the points between snapped to the grid, each piece drawn with one 45° bend on the side of the real road."""
+    pts = [grid[a]] + [real[c] for c in chain] + [grid[b]]
+    idx = _dp_keep(pts, SNAP_EPS)
+    cut = [idx[0]]
+    for i, j in zip(idx, idx[1:]):
+        run = 0.0
+        for m in range(i + 1, j):
+            run += math.dist(pts[m - 1], pts[m])
+            if run >= SNAP_PIECE:
+                cut.append(m); run = 0.0
+        cut.append(j)
+    anchors = [grid[a]] + [(round(pts[m][0]), round(pts[m][1])) for m in cut[1:-1]] + [grid[b]]
+    out = [anchors[0]]
+    for (i, j), (pa, pb) in zip(zip(cut, cut[1:]), zip(anchors, anchors[1:])):
+        if pa == pb: continue
+        for q in octi(pa, pb, pts[(i + j) // 2])[1:]:
+            if q != out[-1]: out.append(q)
+    return out if len(out) > 1 else [grid[a], grid[b]]
+
+def _closest(path, q):
+    """Distance along a path (layout units) of the point nearest q, and the total length."""
+    best, at, run = None, 0.0, 0.0
+    for p0, p1 in zip(path, path[1:]):
+        L = math.dist(p0, p1)
+        if L == 0: continue
+        u = max(0.0, min(1.0, ((q[0] - p0[0]) * (p1[0] - p0[0]) + (q[1] - p0[1]) * (p1[1] - p0[1])) / (L * L)))
+        d = math.dist(q, (p0[0] + u * (p1[0] - p0[0]), p0[1] + u * (p1[1] - p0[1])))
+        if best is None or d < best: best, at = d, run + u * L
+        run += L
+    return at, run
+
 paths = []
 for a, b, chain, ls in sorted(corridors, key=lambda c: (len(c[3]), c[0], c[1])):
     via_real = pos[chain[len(chain) // 2]] if chain else ((pos[a][0] + pos[b][0]) / 2, (pos[a][1] + pos[b][1]) / 2)
     vx, vy = warp(*via_real)
     if MODE == 'geographic':      # stop to stop, as the line runs
         paths.append((a, b, chain, ls, [grid[a]] + [grid[c] for c in chain] + [grid[b]]))
+    elif MODE == 'snapped':       # the real road smoothed, then straightened to 0/45/90° in short pieces
+        paths.append((a, b, chain, ls, _snapped_path(a, b, chain)))
     else:
         paths.append((a, b, chain, ls, octi(grid[a], grid[b], (vx / GRID, vy / GRID))))
 
 
-def _dp_keep(pts, eps):
-    """Douglas–Peucker: indices kept (ends included)."""
-    keep = {0, len(pts) - 1}
-    stack = [(0, len(pts) - 1)]
-    while stack:
-        i, j = stack.pop()
-        (x1, y1), (x2, y2) = pts[i], pts[j]
-        L = math.hypot(x2 - x1, y2 - y1) or 1e-9
-        best, k = 0.0, None
-        for m in range(i + 1, j):
-            d = abs((x2 - x1) * (y1 - pts[m][1]) - (x1 - pts[m][0]) * (y2 - y1)) / L
-            if d > best: best, k = d, m
-        if k is not None and best > eps:
-            keep.add(k); stack += [(i, k), (k, j)]
-    return sorted(keep)
 def _octi_ring(ring, P):
     """A coastline or lake shore smoothed (COAST_EPS grid steps) and straightened to 0/45/90°, like the lines;
     "" when it shrinks to nothing."""
@@ -365,6 +410,7 @@ def draw(SCALE):
 
     stats = collections.Counter()
     failed = []
+    moved_px = []
     svg_lines, svg_dots, svg_labels, tags = [], [], [], []
     occupy(box(0, 0, 1500, 175))          # the title and key
     def place_label(x, y, text, fs, cands, weight=400):
@@ -426,8 +472,20 @@ def draw(SCALE):
         dash = ' stroke-dasharray="5 2.5"' if {m for m, _ in ls} == {'dolmus'} else ''
         svg_lines.append(f'<polyline points="{" ".join(f"{P(p)[0]:.0f},{P(p)[1]:.0f}" for p in path)}" fill="none" stroke="{col}" '
                          f'stroke-width="{w:.1f}" stroke-linejoin="round" stroke-linecap="round"{dash}/>')
+        if MODE == 'snapped' and chain:
+            # each stop on the straightened line where it's nearest to where the stop really is, in order and apart
+            ats = [_closest(path, real[c]) for c in chain]
+            total = ats[0][1] or 1.0
+            gap = min(0.8, total / (len(chain) + 1))
+            fracs, last = [], 0.0
+            for k, (at, _) in enumerate(ats):
+                at = min(max(at, last + gap), total - gap * (len(chain) - k))
+                fracs.append(at / total); last = at
         for i, g in enumerate(chain):
-            if MODE == 'geographic':  # the stop where it is; the line's direction there, from its neighbours
+            if MODE == 'snapped':     # on the straightened line, at the point nearest where the stop really is
+                (x, y), d = along(path, fracs[i])
+                moved_px.append(math.dist((x, y), P(real[g])))
+            elif MODE == 'geographic':  # the stop where it is; the line's direction there, from its neighbours
                 x, y = P(path[i + 1]); px_, py_ = P(path[i]); nx_, ny_ = P(path[i + 2])
                 L = math.hypot(nx_ - px_, ny_ - py_) or 1.0
                 d = ((nx_ - px_) / L, (ny_ - py_) / L)
@@ -488,7 +546,7 @@ def draw(SCALE):
            'font-family="Inter, Roboto, Helvetica, Arial, sans-serif">', f'<rect width="{W:.0f}" height="{H:.0f}" fill="#fbfaf7"/>']
     if LAND:     # the sea is the background; land over it, lakes over the land (OpenStreetMap)
         svg[1] = f'<rect width="{W:.0f}" height="{H:.0f}" fill="{SEA}"/>'
-        if MODE == 'geographic':  # the real shore, only thinned to what shows at this scale
+        if TRUE:                  # the real shore, only thinned to what shows at this scale
             def ring(r):
                 pts = geo.simplify([P((warp(lat, lon)[0] / GRID, warp(lat, lon)[1] / GRID)) for lon, lat in r], 0.6)
                 return "M" + "L".join(f"{x:.1f},{y:.1f}" for x, y in pts) + "Z" if len(pts) > 3 else ""
@@ -500,7 +558,7 @@ def draw(SCALE):
     n_mini = len({l for l in all_lines if l[0] == 'minibus'}); n_dol = len({l for l in all_lines if l[0] == 'dolmus'})
     svg.append(f'<text x="40" y="70" font-size="52" font-weight="700" fill="#111">Istanbul buses, minibüs and dolmuş</text>'
                f'<text x="40" y="104" font-size="20" fill="#444">{n_iett} İETT lines (incl. Metrobüs) · {n_mini} minibüs lines · {n_dol} taksi-dolmuş lines · '
-               f'{len(adj)} stops, every one named · {"true geography: every stop where it is, lines from stop to stop" if MODE == "geographic" else "stretched where the stops are dense, lines and shores straightened to 45° and 90°" if WARP == "elastic" else "true scale, lines straightened to 45° and 90°" if GEOGRAPHY >= 1 else "schematic, not to scale"} · '
+               f'{len(adj)} stops, every one named · {"true geography: every stop where it is, lines from stop to stop" if MODE == "geographic" else "true scale, lines straightened to 45° and 90° along their roads" if MODE == "snapped" else "stretched where the stops are dense, lines and shores straightened to 45° and 90°" if WARP == "elastic" else "true scale, lines straightened to 45° and 90°" if GEOGRAPHY >= 1 else "schematic, not to scale"} · '
                f'data: İBB open data, İETT, OpenStreetMap contributors (land and water), 9 November 2026</text>')
     KEYS = [("İETT bus, 1–2 lines", BUS[0], ''), ("3–5", BUS[1], ''), ("6–12", BUS[2], ''), ("13+", BUS[3], ''), ("Metrobüs", '#e2231a', ''),
             ("Minibüs", MINI[1], ''), ("Taksi-dolmuş", DOLMUS, ' stroke-dasharray="8 4"')]
@@ -510,6 +568,9 @@ def draw(SCALE):
                    f'<text x="{x + 60}" y="140" font-size="17" fill="#222">{lab}</text>')
     svg.append('</svg>')
     stats['failed'] = failed[:12]
+    if moved_px:   # how far stops ended up from where they are, in metres
+        mm = sorted(v / SCALE * GRID * 1000 for v in moved_px)
+        stats['moved'] = (mm[len(mm) // 2], mm[int(len(mm) * 0.95)], mm[-1])
     stats.update(W=round(W), H=round(H), labels=len(stop_spots) + len(key), lines=len(all_lines), n_mini=n_mini, n_dol=n_dol)
     return "\n".join(svg), stats
 
@@ -522,7 +583,7 @@ while True:
         break
     scale *= GROW
 open(OUT, 'w').write(text)
-if WARP == 'elastic' and MODE != 'geographic':
+if WARP == 'elastic' and not TRUE:
     _nn = []
     _keyset = sorted(key)
     _cells = collections.defaultdict(list)
@@ -534,9 +595,11 @@ if WARP == 'elastic' and MODE != 'geographic':
     _nn.sort()
     print(f"cartogram: {_sheet.folded} folded cells; grid step {GRID * 1000:.0f} m of stretched map; places' nearest neighbour: "
           f"median {_nn[len(_nn) // 2]:.1f} steps, {sum(1 for d in _nn if d < 2) * 100 / len(_nn):.0f} % closer than 2 steps")
-if MODE == 'geographic':
-    print(f"{n_iett} İETT + {st['n_mini']} minibüs + {st['n_dol']} dolmuş lines; {len(adj)} stops, every one where it really is, "
-          f"lines stop to stop; {st['W']}x{st['H']}px ({scale / GRID:.0f} px a km); {st['labels']} names, none overlapping "
+if TRUE:
+    where = ("every one where it really is, lines stop to stop" if MODE == 'geographic' else
+             "lines straightened to 0/45/90° along their roads; stops off their real place by a median {:.0f} m, 95 % within {:.0f} m, "
+             "at most {:.0f} m".format(*st['moved']))
+    print(f"{n_iett} İETT + {st['n_mini']} minibüs + {st['n_dol']} dolmuş lines; {len(adj)} stops, {where}; {st['W']}x{st['H']}px ({scale / GRID:.0f} px a km); {st['labels']} names, none overlapping "
           f"({st['leader']} with a leader line); all {st['lines']} lines named -> {OUT}")
 else:
     print(f"{n_iett} İETT + {st['n_mini']} minibüs + {st['n_dol']} dolmuş lines; {len(adj)} stops, {len(key)} key places "
