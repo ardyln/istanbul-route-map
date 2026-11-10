@@ -6,6 +6,7 @@
 # make check  - measures every name and route tag as Chrome draws it and reports any that overlap
 # make viewer - docs/network.json for the online viewer (docs/, GitHub Pages): the network, shores and the cartogram's flow;
 #               docs/network-code.json and network-none.json: the network with fewer stops merged (MERGE=code, none)
+# make stamp  - new ?v= for the viewer's files after editing docs/*.js by hand (make viewer does it too)
 # MERGE=name|code|none python3 schematic.py ... - how stops are merged into places (see schematic.py); make map uses name
 IBB := https://api.ibb.gov.tr/iett/UlasimAnaVeri/HatDurakGuzergah.asmx
 DATA := https://data.ibb.gov.tr/dataset
@@ -46,5 +47,9 @@ viewer:
 	MODE=geographic EXPORT=docs/network.json python3 schematic.py /dev/null
 	MODE=geographic MERGE=code PART=graph EXPORT=docs/network-code.json python3 schematic.py /dev/null
 	MODE=geographic MERGE=none PART=graph EXPORT=docs/network-none.json python3 schematic.py /dev/null
+	$(MAKE) stamp
 
-.PHONY: data map images check viewer
+stamp:   # version the viewer's files, so a reload never mixes new ones with cached ones
+	sed -i -E "s/viewer\.js\?v=[0-9a-f]+/viewer.js?v=$$(cat docs/*.js docs/*.json | md5sum | cut -c1-8)/" docs/index.html
+
+.PHONY: data map images check viewer stamp

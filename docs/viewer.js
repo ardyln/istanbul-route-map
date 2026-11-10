@@ -3,7 +3,9 @@
 const FONT = 'Inter, Roboto, Helvetica, Arial, sans-serif';
 const canvas = document.getElementById('map'), ctx = canvas.getContext('2d');
 const $ = (id) => document.getElementById(id);
-const worker = new Worker('layout.js');
+// ?v= on every file, stamped by `make viewer`: a reload never mixes new and cached (GitHub Pages: 10 min) files
+const V = new URL(document.currentScript.src).search;
+const worker = new Worker('layout.js' + V);
 let M = null;                 // the current layout
 let view = null;              // {cx, cy (km), z (screen px per km)}
 let pending = null, busy = false, raf = 0;
@@ -82,9 +84,9 @@ function setMerge() {
   const want = $('merge').value;
   if (want === merge) return relayout();
   $('status').textContent = 'Loading the stops…';
-  const got = graphs[want] || (graphs[want] = fetch(want === 'name' ? 'network.json' : `network-${want}.json`).then((r) => r.json())
+  const got = graphs[want] || (graphs[want] = fetch(`network-${want}.json` + V).then((r) => r.json())
     .then((g) => ({ places: g.places, lines: g.lines, corridors: g.corridors })));
-  got.then((g) => {
+  Promise.all([got, base]).then(([g]) => {   // the worker needs the base network (shores, flow) first
     if ($('merge').value !== want) return;   // changed again while loading
     merge = want;
     worker.postMessage({ graph: g });
@@ -92,11 +94,11 @@ function setMerge() {
   }, () => { graphs[want] = null; $('merge').value = merge; $('status').textContent = 'Could not load those stops.'; });
 }
 $('merge').addEventListener('change', setMerge);
-fetch('network.json').then((r) => r.json()).then((data) => {
+const base = fetch('network.json' + V).then((r) => r.json()).then((data) => {
   graphs.name = Promise.resolve({ places: data.places, lines: data.lines, corridors: data.corridors });
   worker.postMessage({ data });
-  if ($('merge').value !== 'name') setMerge(); else relayout();
 });
+base.then(() => { if ($('merge').value !== 'name') setMerge(); else relayout(); });
 
 // -- view: km centre and screen px per km, so it survives a new layout ---------------------------------
 function fit() {
