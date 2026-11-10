@@ -22,6 +22,16 @@ const { chromium } = require('playwright-core');
     console.log(`squish ${sq} snap ${sn}:`, await pg.textContent('#status'));
     await pg.screenshot({ path: `${out}-s${sq}-n${sn}.png` });
   }
+  // the ways of merging stops, zoomed in on Zincirlikuyu: the same place should stay in the middle
+  await pg.fill('#search', 'Zincirlikuyu Metrobüs'); await pg.waitForTimeout(300);
+  await pg.click('#results li >> nth=0'); await pg.waitForTimeout(400);
+  for (const m of ['none', 'code', 'name']) {
+    await pg.selectOption('#merge', m); await pg.waitForTimeout(200); await settle();
+    const mid = await pg.evaluate(() => { const { k, ox, oy } = toScreen(); const cx = (canvas.clientWidth / 2 - ox) / k, cy = (canvas.clientHeight / 2 - oy) / k;
+      let bd = Infinity, nm = ''; M.places.forEach((pl) => { if (pl) { const d = Math.hypot(pl[1] - cx, pl[2] - cy); if (d < bd) { bd = d; nm = pl[0]; } } }); return nm; });
+    console.log(`merge ${m}: ${await pg.textContent('#status')} | middle: ${mid} | url ${new URL(pg.url()).search}`);
+    await pg.screenshot({ path: `${out}-merge-${m}.png` });
+  }
   console.log('errors:', JSON.stringify(errs.slice(0, 5)));
   await b.close();
 })();

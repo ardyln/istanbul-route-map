@@ -1,5 +1,6 @@
 // Layout worker for the Istanbul route map viewer: the same rules as schematic.py, run in the browser.
-// In: {params: {squish 0..1, snap 0..10, coast 'real'|'straight', minibus, dolmus}} after {data}.
+// In: {params: {squish 0..1, snap 0..10, coast 'real'|'straight', minibus, dolmus}} after {data}; {graph} swaps in
+// another way of merging stops (network-code.json, network-none.json).
 // Out: everything to draw, in layout px (km × pxkm), plus figures for the panel.
 'use strict';
 let D = null, meshFrames = null;
@@ -27,6 +28,11 @@ onmessage = (e) => {
       for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
       return new Float32Array(buf.buffer);
     });
+    D.lineMode = D.lines.map((l) => l[0]);
+  }
+  if (e.data.graph) {   // another way of merging stops: its places, lines and corridors; shores and flow stay
+    const g = e.data.graph;
+    D.places = g.places; D.lines = g.lines; D.corridors = g.corridors;
     D.lineMode = D.lines.map((l) => l[0]);
   }
   if (e.data.params) {

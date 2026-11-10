@@ -13,6 +13,7 @@ let anchor = null;            // the stop nearest the middle of the screen, kept
 const url = new URLSearchParams(location.search);
 for (const [id, def] of [['squish', '0'], ['snap', '5']]) $(id).value = url.get(id) ?? def;
 $('straightCoast').checked = url.get('coast') === 'straight';
+if (['code', 'none'].includes(url.get('merge'))) $('merge').value = url.get('merge');
 for (const id of ['minibus', 'dolmus']) $(id).checked = url.get(id) !== '0';
 function params() {
   return { squish: $('squish').value / 100, snap: +$('snap').value, coast: $('straightCoast').checked ? 'straight' : 'real',
@@ -29,12 +30,13 @@ function relayout() {
   if (p.coast === 'straight') q.set('coast', 'straight');
   if (!p.minibus) q.set('minibus', '0');
   if (!p.dolmus) q.set('dolmus', '0');
+  if (merge !== 'name') q.set('merge', merge);
   history.replaceState(null, '', '?' + q);
   if (M && view && anchor === null) {   // remember what's in the middle, to keep it there
     const { k, ox, oy } = toScreen();
     const cx = (canvas.clientWidth / 2 - ox) / k, cy = (canvas.clientHeight / 2 - oy) / k;
     let bd = Infinity;
-    M.places.forEach((pl, g) => { if (pl) { const d = Math.hypot(pl[1] - cx, pl[2] - cy); if (d < bd) { bd = d; anchor = [g, pl[1] - cx, pl[2] - cy, M.pxkm]; } } });
+    M.places.forEach((pl, g) => { if (pl) { const d = Math.hypot(pl[1] - cx, pl[2] - cy); if (d < bd) { bd = d; anchor = [g, pl[1] - cx, pl[2] - cy, M.pxkm, pl[0], pl[1], pl[2]]; } } });
   }
   if (busy) { pending = p; return; }
   busy = true;
@@ -49,8 +51,18 @@ worker.onmessage = (e) => {
   busy = false;
   index();
   if (!view) fit();
-  else if (anchor && M.places[anchor[0]] && !pending) {   // the same stop in the middle as before
-    const pl = M.places[anchor[0]];
+  else if (anchor && !pending && (() => {   // the same stop in the middle as before
+    let pl = M.places[anchor[0]];
+    if (!pl || pl[0] !== anchor[4]) {   // stops merged another way: the nearest stop of that name
+      const r = M.pxkm / anchor[3];
+      let bd = Infinity;
+      pl = null;
+      for (const q of M.places) if (q && q[0] === anchor[4]) { const d = Math.hypot(q[1] - anchor[5] * r, q[2] - anchor[6] * r); if (d < bd) { bd = d; pl = q; } }
+    }
+    anchor.pl = pl;
+    return pl;
+  })()) {
+    const pl = anchor.pl;
     view.cx = M.x0 + (pl[1] - anchor[1] * M.pxkm / anchor[3]) / M.pxkm;
     view.cy = M.y0 + (pl[2] - anchor[2] * M.pxkm / anchor[3]) / M.pxkm;
   }
@@ -63,9 +75,27 @@ worker.onmessage = (e) => {
   draw();
   if (pending) { const p = pending; pending = null; busy = true; $('status').textContent = 'Laying out…'; worker.postMessage({ params: p }); }
 };
+// stops merged by name come with network.json; the other ways are fetched when first chosen
+const graphs = {};
+let merge = 'name';
+function setMerge() {
+  const want = $('merge').value;
+  if (want === merge) return relayout();
+  $('status').textContent = 'Loading the stops…';
+  const got = graphs[want] || (graphs[want] = fetch(want === 'name' ? 'network.json' : `network-${want}.json`).then((r) => r.json())
+    .then((g) => ({ places: g.places, lines: g.lines, corridors: g.corridors })));
+  got.then((g) => {
+    if ($('merge').value !== want) return;   // changed again while loading
+    merge = want;
+    worker.postMessage({ graph: g });
+    relayout();
+  }, () => { graphs[want] = null; $('merge').value = merge; $('status').textContent = 'Could not load those stops.'; });
+}
+$('merge').addEventListener('change', setMerge);
 fetch('network.json').then((r) => r.json()).then((data) => {
+  graphs.name = Promise.resolve({ places: data.places, lines: data.lines, corridors: data.corridors });
   worker.postMessage({ data });
-  relayout();
+  if ($('merge').value !== 'name') setMerge(); else relayout();
 });
 
 // -- view: km centre and screen px per km, so it survives a new layout ---------------------------------

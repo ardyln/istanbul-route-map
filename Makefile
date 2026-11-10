@@ -4,7 +4,9 @@
 #               straightened to 0/45/90° along their roads) and out/geographic/istanbul-route-map-geographic.svg (lines stop to stop)
 # make images - the overview PNG and the 4×3 full-resolution tiles (needs: cd tools && npm install, and Google Chrome)
 # make check  - measures every name and route tag as Chrome draws it and reports any that overlap
-# make viewer - docs/network.json for the online viewer (docs/, GitHub Pages): the network, shores and the cartogram's flow
+# make viewer - docs/network.json for the online viewer (docs/, GitHub Pages): the network, shores and the cartogram's flow;
+#               docs/network-code.json and network-none.json: the network with fewer stops merged (MERGE=code, none)
+# MERGE=name|code|none python3 schematic.py ... - how stops are merged into places (see schematic.py); make map uses name
 IBB := https://api.ibb.gov.tr/iett/UlasimAnaVeri/HatDurakGuzergah.asmx
 DATA := https://data.ibb.gov.tr/dataset
 
@@ -42,5 +44,7 @@ check:
 
 viewer:
 	MODE=geographic EXPORT=docs/network.json python3 schematic.py /dev/null
+	MODE=geographic MERGE=code PART=graph EXPORT=docs/network-code.json python3 schematic.py /dev/null
+	MODE=geographic MERGE=none PART=graph EXPORT=docs/network-none.json python3 schematic.py /dev/null
 
 .PHONY: data map images check viewer

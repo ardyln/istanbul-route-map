@@ -16,9 +16,9 @@ Bosphorus and the lakes. The lines are straightened to 0°, 45° and 90° along 
 - **Squishing:** 0 is true scale. Higher values stretch the land where the stops are dense, along the flow of a diffusion cartogram worked out beforehand, so busy districts get room.
 - **Snappiness:** 0 draws lines from stop to stop. Higher values smooth them more and straighten them to 0°, 45° and 90° on a coarser grid.
 
-Toggles switch to straightened shores and hide the minibüs or dolmuş lines. The settings are kept in the address, so a view can be shared.
+Toggles switch to straightened shores and hide the minibüs or dolmuş lines. **Merge stops** sets how stops become places: by the same name nearby (the default, as on the printed maps), only both sides of the road, or not at all (every stop sign on its own). The settings are kept in the address, so a view can be shared.
 
-The viewer runs the same rules as `schematic.py` (`docs/layout.js`, in a background thread): every stop and line named, and no overlapping text, measured with the browser's own fonts. `make viewer` rebuilds its data (`docs/network.json`).
+The viewer runs the same rules as `schematic.py` (`docs/layout.js`, in a background thread): every stop and line named, and no overlapping text, measured with the browser's own fonts. `make viewer` rebuilds its data (`docs/network.json`, and `docs/network-code.json` and `network-none.json` for the other ways of merging stops, fetched only when chosen).
 
 ### Geographic version
 
@@ -51,6 +51,7 @@ How to read it:
   - Interchanges, terminals and branch points are snapped to a 100 m grid, so lines meet cleanly. Stops sit on their line at the point nearest where they really are: off by a median of 39 m, 95 % within 144 m.
 - **Places:** both sides of a road count as one place, as do same-name stops within 300 m (never across the Metrobüs).
   - Minibüs and dolmuş stops join an İETT stop of the same name within 150 m.
+  - The online viewer's **Merge stops** setting, or `MERGE=code` / `MERGE=none`, turns the same-name rule off; with `none`, both sides of a road are separate too. A minibüs or dolmuş stop that is an İETT stop (same name, within 20 m) always stays that stop.
   - Interchanges, terminals and branch points are circles; other stops are small dots.
 - **Names:** names along level lines are set at 45°. Where a name has no room beside its stop, it moves further out with a thin leader line (1,150 of them).
   - **No text overlaps:** no name or route tag touches another one or a stop dot.
@@ -77,7 +78,7 @@ make check    # every name and route tag measured as Chrome draws it; reports an
 - `schematic.py`: builds the network, keeps the places where something changes, and snaps them to a grid.
   - It splits corridors that are too short for their stops, and draws every corridor with one 45° bend.
   - It places every name with a rotated-box overlap test against the names, tags and stop dots already placed, then the route tags. Every line gets at least one tag.
-  - The same data always gives the same map. Settings come from the environment: `MODE` (`snapped`, the default; `geographic`; `schematic`), `SCALE` (px per 100 m to start from; `make map` uses 18, and it grows if a name has no room), `SNAP_EPS` (road wiggle smoothed away, in 100 m units, 1.5) and `SNAP_PIECE` (longest straightened piece, 6). The `schematic` mode has its own (`WARP`, `BASE`, `ELASTIC_STEPS`, `GAP`, `MIN_GAP`, `COAST_EPS`, `COAST_PIECE`); its cartogram is cached in `data/cartogram-*.pickle`.
+  - The same data always gives the same map. Settings come from the environment: `MODE` (`snapped`, the default; `geographic`; `schematic`), `SCALE` (px per 100 m to start from; `make map` uses 18, and it grows if a name has no room), `SNAP_EPS` (road wiggle smoothed away, in 100 m units, 1.5) and `SNAP_PIECE` (longest straightened piece, 6) and `MERGE` (`name`, the default: same-name stops merged as described under Places; `code`: only both sides of the road; `none`: every stop sign its own place). The `schematic` mode has its own (`WARP`, `BASE`, `ELASTIC_STEPS`, `GAP`, `MIN_GAP`, `COAST_EPS`, `COAST_PIECE`); its cartogram is cached in `data/cartogram-*.pickle`.
 - `tools/measure_chars.js` measures each character's width in the installed fonts, into `tools/charwidths.json`. `tools/check_overlaps.js` is the independent check behind `make check`.
 
 ## Data

@@ -40,12 +40,19 @@ def km(a, b):
     return math.hypot((a[0] - b[0]) * 110.57, (a[1] - b[1]) * 111.32 * math.cos(math.radians(41)))
 
 # -- places ---------------------------------------------------------------------------------------------
+# MERGE=name (default): both sides of a road (one stop code but the last digit) are one place, and so are same-name
+#   stops within 300 m; a minibüs/dolmuş stop joins a same-name place within 150 m.
+# MERGE=code: only both sides of a road; MERGE=none: every stop sign its own place. Either way a minibüs/dolmuş stop
+#   that is an İETT stop (same name, same spot) stays that stop.
+MERGE = os.environ.get('MERGE', 'name')
+assert MERGE in ('name', 'code', 'none'), "MERGE is name, code or none"
+group = (lambda c: str(c)) if MERGE == 'none' else (lambda c: str(c)[:-1])
 pos, name, modes = {}, {}, collections.defaultdict(set)
 acc = collections.defaultdict(list)
 for d in durak:
     m = re.match(r'POINT \(([\d.]+) ([\d.]+)\)', d['KOORDINAT'] or '')
     if not m: continue
-    g = str(d['SDURAKKODU'])[:-1]
+    g = group(d['SDURAKKODU'])
     acc[g].append((float(m.group(2)), float(m.group(1))))
     name.setdefault(g, title(d['SDURAKADI']))
 for g, pts in acc.items():
@@ -58,7 +65,7 @@ for g in sorted(pos):
 for nm, gs in by_name.items():
     heads = []
     for g in gs:
-        h = next((h for h in heads if km(pos[h], pos[g]) <= 0.3 and is_mb(h) == is_mb(g)), None)
+        h = next((h for h in heads if MERGE == 'name' and km(pos[h], pos[g]) <= 0.3 and is_mb(h) == is_mb(g)), None)
         if h is None: heads.append(g)
         else: alias[g] = h
 heads_by_name = collections.defaultdict(list)
@@ -67,7 +74,9 @@ for g in pos:
 def place_for(nm, lat, lon, near=0.15):
     """A minibüs/dolmuş stop joins a place of the same name close by, or becomes a place of its own."""
     for g in heads_by_name.get(nm, ()):
-        if km(pos[g], (lat, lon)) <= near:
+        if MERGE == 'name':
+            if km(pos[g], (lat, lon)) <= near: return g
+        elif any(km(q, (lat, lon)) <= 0.02 for q in acc.get(g) or [pos[g]]):   # the same stop sign
             return g
     g = f"x{len(pos)}"
     pos[g] = (lat, lon); name[g] = nm; heads_by_name[nm].append(g)
@@ -87,7 +96,7 @@ n_iett = 0
 for L in iett:
     drawn = False
     for codes in L['dirs']:
-        seq = [alias.get(c[:-1], c[:-1]) for c in codes if c[:-1] in pos]
+        seq = [alias.get(group(c), group(c)) for c in codes if group(c) in pos]
         if len(set(seq)) >= 2:
             add_seq(seq, 'metrobus' if all(is_mb(g) for g in seq) else 'bus', L['line']); drawn = True
     n_iett += drawn
@@ -586,6 +595,11 @@ if os.environ.get('EXPORT'):
         places_out.append([name[g], round(x, 4), round(y, 4), len(serves[g]),
                            (1 if is_mb(g) else 0) | (2 if g in key else 0) | (4 if g in terminals else 0)])
     corr_out = [[gidx[a], gidx[b], [gidx[c] for c in chain], sorted(lidx[l] for l in ls)] for a, b, chain, ls in corridors]
+    if os.environ.get('PART') == 'graph':   # another way of merging stops: just the network, shores and flow from network.json
+        json.dump({"merge": MERGE, "places": places_out, "lines": [[m, c] for m, c in lines_l], "corridors": corr_out},
+                  open(os.environ['EXPORT'], 'w'), ensure_ascii=False, separators=(",", ":"))
+        print(f"exported {len(places_out)} places, {len(corr_out)} corridors, {len(lines_l)} lines (MERGE={MERGE}) -> {os.environ['EXPORT']}")
+        sys.exit(0)
     def ring_km(r, eps=0.015):
         return [[round(x, 3), round(y, 3)] for x, y in geo.simplify([lin(lat, lon) for lon, lat in r], eps)]
     land_out = [rk for rk in (ring_km(r) for r in LAND) if len(rk) > 3]
@@ -602,7 +616,7 @@ if os.environ.get('EXPORT'):
     mesh = {"x0": sheet.ox + j0 * sheet.cell, "y0": sheet.oy + i0 * sheet.cell, "step": sheet.cell * step,
             "nx": frames[0].shape[1], "ny": frames[0].shape[0], "folded": sheet.folded,
             "frames": [base64.b64encode(np.asarray(f, dtype=np.float32).tobytes()).decode() for f in frames]}
-    out = {"made": "9 November 2026", "places": places_out, "lines": [[m, c] for m, c in lines_l], "corridors": corr_out,
+    out = {"made": "9 November 2026", "merge": MERGE, "places": places_out, "lines": [[m, c] for m, c in lines_l], "corridors": corr_out,
            "land": land_out, "lakes": lakes_out, "mesh": mesh}
     json.dump(out, open(os.environ['EXPORT'], 'w'), ensure_ascii=False, separators=(",", ":"))
     print(f"exported {len(places_out)} places, {len(corr_out)} corridors, {len(lines_l)} lines, {len(land_out)} land rings, "
